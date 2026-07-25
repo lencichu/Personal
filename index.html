@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Flick Kick Family</title>
+<meta name="theme-color" content="#1b5e20" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0d3d15;
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #game-container {
+    width: 100%;
+    height: 100%;
+  }
+  canvas {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<div id="game-container"></div>
+<script src="vendor/phaser.min.js"></script>
+<script src="src/scenes/BootScene.js"></script>
+<script src="src/scenes/MenuScene.js"></script>
+<script src="src/scenes/GameScene.js"></script>
+<script src="src/scenes/ResultScene.js"></script>
+<script src="src/config/levels.js"></script>
+<script src="src/main.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
