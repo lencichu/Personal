@@ -1,11 +1,12 @@
 // Curva de dificultad del modo infinito.
-// Cada "tier" son 3 goles. Sube la distancia mostrada, la velocidad de
-// reaccion del portero y baja su tiempo de reaccion.
+// Cada "tier" son 3 goles. En el tier 0 el portero esta quieto (para que
+// el primer contacto con el juego sea facil de leer); a partir del tier 1
+// se mueve de lado a lado a velocidad constante, cada vez mas rapido.
 function getDifficulty(score) {
   const tier = Math.floor(score / 3);
   const distance = 11 + tier * 2;
-  const keeperMaxSpeed = Math.min(260, 90 + tier * 18);
-  const keeperReactionMs = Math.max(110, 320 - tier * 15);
+  const keeperMoves = tier >= 1;
+  const keeperPatrolSpeed = keeperMoves ? Math.min(150, 55 + (tier - 1) * 14) : 0;
   const visualDistanceScale = Math.max(0.72, 1 - tier * 0.03);
-  return { tier, distance, keeperMaxSpeed, keeperReactionMs, visualDistanceScale };
+  return { tier, distance, keeperMoves, keeperPatrolSpeed, visualDistanceScale };
 }

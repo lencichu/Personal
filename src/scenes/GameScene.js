@@ -7,7 +7,7 @@ const CENTER_X = FIELD_WIDTH / 2;
 // Espacio logico (para fisica/colisiones). No es lo mismo que la pantalla.
 const BALL_LOGICAL_START = { x: CENTER_X, y: 710 };
 const GOAL_LOGICAL_Y = 130;
-const KEEPER_LOGICAL_Y = 430;
+const KEEPER_LOGICAL_Y = 300;
 const GOAL_HALF_WIDTH = 100;
 const SIDE_MARGIN = 30;
 
@@ -26,9 +26,10 @@ const MAX_DRAG = 260;
 const MIN_SPEED = 10;
 const MAX_SPEED = 20;
 const MAX_DX = 160;
-const MAX_ANGLE_RAD = Phaser.Math.DegToRad(38);
-const CURVE_STRENGTH = 5.5;
-const CURVE_DECAY = 0.994;
+const MAX_ANGLE_RAD = Phaser.Math.DegToRad(28);
+const CURVE_STRENGTH = 0.8;
+const CURVE_DECAY = 0.985;
+const CURVE_DURATION_MS = 300;
 const STOP_SPEED_THRESHOLD = 0.6;
 
 const START_LIVES = 3;
@@ -66,6 +67,7 @@ class GameScene extends Phaser.Scene {
     this.canShoot = true;
     this.dragging = false;
     this.curveAccel = 0;
+    this.curveTimer = 0;
     this.paused = false;
   }
 
@@ -202,9 +204,12 @@ class GameScene extends Phaser.Scene {
   }
 
   // ---------- Portero ----------
+  // Se mueve a velocidad constante de un lado a otro (sin reaccionar al
+  // tiro), para que el jugador pueda calcular el hueco. Por debajo del
+  // tier 1 de dificultad se queda quieto en el centro.
 
   createKeeper() {
-    this.keeperBody = this.matter.add.rectangle(CENTER_X, KEEPER_LOGICAL_Y, 60, 90, {
+    this.keeperBody = this.matter.add.rectangle(CENTER_X, KEEPER_LOGICAL_Y, 50, 90, {
       isStatic: true,
       label: 'keeper',
     });
@@ -213,9 +218,10 @@ class GameScene extends Phaser.Scene {
     this.keeperSprite = this.add.image(CENTER_X, HORIZON_Y, 'defender_placeholder');
     this.syncKeeperVisual();
 
-    this.keeperDiving = false;
-    this.keeperTargetX = CENTER_X;
-    this.keeperReactionTimer = 0;
+    this.keeperDirection = 1;
+    const keeperHalfWidth = 25;
+    this.keeperLeftLimit = CENTER_X - GOAL_HALF_WIDTH + keeperHalfWidth;
+    this.keeperRightLimit = CENTER_X + GOAL_HALF_WIDTH - keeperHalfWidth;
   }
 
   syncKeeperVisual() {
@@ -223,35 +229,21 @@ class GameScene extends Phaser.Scene {
     this.keeperSprite.setPosition(screen.x, screen.y).setScale(this.keeperBaseScale);
   }
 
-  startKeeperDive(targetLogicalX) {
-    this.keeperDiving = true;
-    this.keeperTargetX = Phaser.Math.Clamp(
-      targetLogicalX,
-      CENTER_X - GOAL_HALF_WIDTH - 20,
-      CENTER_X + GOAL_HALF_WIDTH + 20
-    );
-    this.keeperReactionTimer = this.difficulty.keeperReactionMs;
-  }
-
-  updateKeeper(delta) {
-    if (!this.keeperDiving) return;
-
-    if (this.keeperReactionTimer > 0) {
-      this.keeperReactionTimer -= delta;
-      return;
-    }
+  updateKeeperPatrol(delta) {
+    if (!this.difficulty.keeperMoves) return;
 
     const current = this.keeperBody.position.x;
-    const diff = this.keeperTargetX - current;
-    const maxStep = this.difficulty.keeperMaxSpeed * (delta / 1000);
-    const step = Phaser.Math.Clamp(diff, -maxStep, maxStep);
-    MatterBody.setPosition(this.keeperBody, { x: current + step, y: KEEPER_LOGICAL_Y });
-    this.syncKeeperVisual();
-  }
+    let next = current + this.keeperDirection * this.difficulty.keeperPatrolSpeed * (delta / 1000);
 
-  resetKeeper() {
-    this.keeperDiving = false;
-    MatterBody.setPosition(this.keeperBody, { x: CENTER_X, y: KEEPER_LOGICAL_Y });
+    if (next >= this.keeperRightLimit) {
+      next = this.keeperRightLimit;
+      this.keeperDirection = -1;
+    } else if (next <= this.keeperLeftLimit) {
+      next = this.keeperLeftLimit;
+      this.keeperDirection = 1;
+    }
+
+    MatterBody.setPosition(this.keeperBody, { x: next, y: KEEPER_LOGICAL_Y });
     this.syncKeeperVisual();
   }
 
@@ -460,12 +452,10 @@ class GameScene extends Phaser.Scene {
     MatterBody.setVelocity(this.ballBody, { x: vx, y: vy });
 
     this.curveAccel = (clampedDx / MAX_DX) * CURVE_STRENGTH;
+    this.curveTimer = 0;
     this.shotInFlight = true;
     this.shotResolved = false;
     this.canShoot = false;
-
-    const predictedX = BALL_LOGICAL_START.x + vx * 22 + this.curveAccel * 8;
-    this.startKeeperDive(predictedX);
   }
 
   // ---------- Resolucion de disparo ----------
@@ -534,7 +524,6 @@ class GameScene extends Phaser.Scene {
   afterShot() {
     MatterBody.setPosition(this.ballBody, { x: BALL_LOGICAL_START.x, y: BALL_LOGICAL_START.y });
     MatterBody.setVelocity(this.ballBody, { x: 0, y: 0 });
-    this.resetKeeper();
     this.syncBallVisual();
 
     if (this.lives <= 0) {
@@ -556,16 +545,19 @@ class GameScene extends Phaser.Scene {
 
     this.crowd.tilePositionX += 0.03 * delta;
 
-    this.updateKeeper(delta);
+    this.updateKeeperPatrol(delta);
     this.syncBallVisual();
 
     if (this.shotInFlight) {
       const v = this.ballBody.velocity;
-      MatterBody.setVelocity(this.ballBody, {
-        x: v.x + this.curveAccel * (delta / 1000),
-        y: v.y,
-      });
-      this.curveAccel *= CURVE_DECAY;
+      if (this.curveTimer < CURVE_DURATION_MS) {
+        MatterBody.setVelocity(this.ballBody, {
+          x: v.x + this.curveAccel * (delta / 1000),
+          y: v.y,
+        });
+        this.curveAccel *= CURVE_DECAY;
+        this.curveTimer += delta;
+      }
 
       const speed = Math.hypot(v.x, v.y);
       if (speed < STOP_SPEED_THRESHOLD) {
