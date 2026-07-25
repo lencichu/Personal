@@ -1,11 +1,11 @@
-const CACHE_NAME = 'flick-kick-family-v1';
+const CACHE_NAME = 'flick-kick-family-v2';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
   './vendor/phaser.min.js',
   './src/main.js',
-  './src/config/levels.js',
+  './src/config/difficulty.js',
   './src/scenes/BootScene.js',
   './src/scenes/MenuScene.js',
   './src/scenes/GameScene.js',

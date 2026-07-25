@@ -9,74 +9,63 @@ class ResultScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
-    const { won, goalsScored, goalsToWin, levelIndex, isLastLevel } = this.result;
+    const { score, highScore, isNewRecord } = this.result;
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x0d3d15);
 
-    const title = won ? (isLastLevel ? '¡JUEGO COMPLETADO!' : '¡NIVEL SUPERADO!') : 'INTENTALO OTRA VEZ';
-    const titleColor = won ? '#ffe066' : '#ff8a8a';
-
     this.add
-      .text(width / 2, height * 0.28, title, {
+      .text(width / 2, height * 0.24, 'FIN DE LA PARTIDA', {
         fontFamily: 'Arial, sans-serif',
-        fontSize: '34px',
+        fontSize: '30px',
         fontStyle: 'bold',
-        color: titleColor,
+        color: '#ff8a8a',
         align: 'center',
-        wordWrap: { width: width - 60 },
       })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height * 0.4, `Goles: ${goalsScored}/${goalsToWin}`, {
+      .text(width / 2, height * 0.36, `Goles marcados: ${score}`, {
         fontFamily: 'Arial, sans-serif',
-        fontSize: '22px',
+        fontSize: '24px',
         color: '#ffffff',
       })
       .setOrigin(0.5);
 
-    if (won && isLastLevel) {
+    this.add
+      .text(width / 2, height * 0.43, `Maxima puntuacion: ${highScore}`, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '18px',
+        color: '#dfffe0',
+      })
+      .setOrigin(0.5);
+
+    if (isNewRecord) {
       this.add
-        .text(width / 2, height * 0.48, '¡Enhorabuena, campeón de la familia!', {
+        .text(width / 2, height * 0.5, '¡NUEVO RECORD!', {
           fontFamily: 'Arial, sans-serif',
-          fontSize: '18px',
-          color: '#dfffe0',
-          align: 'center',
-          wordWrap: { width: width - 80 },
+          fontSize: '22px',
+          fontStyle: 'bold',
+          color: '#ffe066',
         })
         .setOrigin(0.5);
     }
 
-    let mainLabel;
-    let mainAction;
-
-    if (won && !isLastLevel) {
-      mainLabel = 'SIGUIENTE NIVEL';
-      mainAction = () => this.scene.start('GameScene', { levelIndex: levelIndex + 1 });
-    } else if (won && isLastLevel) {
-      mainLabel = 'JUGAR DE NUEVO';
-      mainAction = () => this.scene.start('GameScene', { levelIndex: 0 });
-    } else {
-      mainLabel = 'REINTENTAR';
-      mainAction = () => this.scene.start('GameScene', { levelIndex });
-    }
-
-    const mainButton = this.add
-      .text(width / 2, height * 0.62, mainLabel, {
+    const playButton = this.add
+      .text(width / 2, height * 0.64, 'JUGAR DE NUEVO', {
         fontFamily: 'Arial, sans-serif',
-        fontSize: '28px',
+        fontSize: '26px',
         fontStyle: 'bold',
         color: '#0d3d15',
         backgroundColor: '#ffffff',
-        padding: { x: 32, y: 14 },
+        padding: { x: 28, y: 14 },
       })
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
 
-    mainButton.on('pointerdown', mainAction);
+    playButton.on('pointerdown', () => this.scene.start('GameScene'));
 
     const menuButton = this.add
-      .text(width / 2, height * 0.74, 'MENU', {
+      .text(width / 2, height * 0.75, 'MENU', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '18px',
         color: '#dfffe0',
