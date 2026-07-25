@@ -1,4 +1,4 @@
-const CACHE_NAME = 'flick-kick-family-v2';
+const CACHE_NAME = 'flick-kick-family-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const APP_SHELL = [
   './src/scenes/ResultScene.js',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
+  './assets/familia/title-enzo.png',
 ];
 
 self.addEventListener('install', (event) => {

@@ -3,6 +3,10 @@ class BootScene extends Phaser.Scene {
     super('BootScene');
   }
 
+  preload() {
+    this.load.image('title_enzo', 'assets/familia/title-enzo.png');
+  }
+
   create() {
     this.generatePlaceholderTextures();
     this.scene.start('MenuScene');

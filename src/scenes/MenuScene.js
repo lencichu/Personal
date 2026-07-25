@@ -8,43 +8,34 @@ class MenuScene extends Phaser.Scene {
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x0d3d15);
 
-    this.add
-      .text(width / 2, height * 0.22, 'FLICK KICK\nFAMILY', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '44px',
-        fontStyle: 'bold',
-        color: '#ffffff',
-        align: 'center',
-      })
-      .setOrigin(0.5);
+    const bg = this.add.image(width / 2, height / 2, 'title_enzo');
+    const coverScale = Math.max(width / bg.width, height / bg.height);
+    bg.setScale(coverScale);
 
-    this.add.image(width / 2, height * 0.4, 'ball').setScale(2.5);
-
-    this.add
-      .text(
-        width / 2,
-        height * 0.5,
-        'Desliza el dedo hacia arriba para chutar.\nCuanto mas largo el gesto, mas potencia.\nInclina el gesto a un lado para dar efecto.\nMarca todos los goles que puedas antes\nde quedarte sin vidas.',
-        {
-          fontFamily: 'Arial, sans-serif',
-          fontSize: '17px',
-          color: '#dfffe0',
-          align: 'center',
-        }
-      )
-      .setOrigin(0.5);
+    const panelY = height * 0.78;
+    this.add.rectangle(width / 2, panelY, width, height * 0.44, 0x0d3d15, 0.65).setOrigin(0.5, 0);
 
     const highScore = parseInt(localStorage.getItem('flickKickFamily_highScore') || '0', 10);
     this.add
-      .text(width / 2, height * 0.65, `Maxima puntuacion: ${highScore}`, {
+      .text(width / 2, panelY + 18, `Maxima puntuacion: ${highScore}`, {
         fontFamily: 'Arial, sans-serif',
         fontSize: '16px',
         color: '#ffe066',
       })
       .setOrigin(0.5);
 
+    this.add
+      .text(width / 2, panelY + 46, 'Desliza hacia arriba para chutar. Inclina para dar efecto.', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '13px',
+        color: '#dfffe0',
+        align: 'center',
+        wordWrap: { width: width - 60 },
+      })
+      .setOrigin(0.5);
+
     const playButton = this.add
-      .text(width / 2, height * 0.76, 'JUGAR', {
+      .text(width / 2, panelY + 92, 'JUGAR', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '32px',
         fontStyle: 'bold',
@@ -60,11 +51,11 @@ class MenuScene extends Phaser.Scene {
     });
 
     this.add
-      .text(width / 2, height * 0.9, 'v0.2 - prototipo', {
+      .text(width / 2, height - 12, 'v0.3 - prototipo', {
         fontFamily: 'Arial, sans-serif',
-        fontSize: '14px',
+        fontSize: '12px',
         color: '#7fbf8f',
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5, 1);
   }
 }
