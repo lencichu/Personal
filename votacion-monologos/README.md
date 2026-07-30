@@ -46,7 +46,50 @@ que el organizador los publica, y login real solo para el administrador.
 - Publicar resultados es reversible: puedes mostrarlos y volver a
   ocultarlos cuando quieras desde el panel.
 
-## Requisitos del servidor
+## Desplegar sin administrar un servidor (recomendado): Railway
+
+Si no quieres manejar SSH, nginx ni certificados, la forma más simple es
+un PaaS como [Railway](https://railway.app): conectas el repo de GitHub y
+él se encarga de instalar, arrancar y darte HTTPS.
+
+1. Entra en https://railway.app y crea una cuenta (puedes usar tu GitHub).
+2. **New Project → Deploy from GitHub repo** → elige `lencichu/Personal`.
+   Railway te pedirá autorizar el acceso a tus repos la primera vez.
+3. En la configuración del servicio que se crea (pestaña **Settings**),
+   busca **Root Directory** y ponlo a `votacion-monologos` — es
+   imprescindible, porque el repo tiene más proyectos aparte de este.
+4. En **Variables**, añade estas (mismos valores que en `.env.example`,
+   pero rellenados de verdad):
+   - `SESSION_SECRET` — cadena larga y aleatoria.
+   - `ADMIN_SETUP_TOKEN` — el código que usarás tú una vez para crear tu
+     cuenta de administrador.
+   - `NODE_ENV` = `production`
+   - `DATA_DIR` = `/data`
+   - No hace falta poner `PORT`, Railway lo asigna solo.
+5. En la pestaña **Volumes**, añade un volumen y móntalo en `/data`. Esto
+   es lo que hace que los votos sobrevivan a futuros despliegues — sin
+   esto, cada vez que subas un cambio se perdería la base de datos.
+6. Pulsa **Deploy**. Cuando termine, en **Settings → Networking** genera
+   un dominio público (botón "Generate Domain"): te da una URL con HTTPS
+   ya incluido, tipo `algo.up.railway.app`. Puedes apuntar tu propio
+   dominio ahí también si tienes uno, desde la misma pestaña.
+7. Abre `https://tu-url/admin-login.html` y registra tu cuenta de
+   administrador con el `ADMIN_SETUP_TOKEN` que pusiste en el paso 4.
+
+Coste aproximado: el plan Hobby de Railway son 5 $/mes de base, que suelen
+cubrir de sobra el uso de una app tan ligera como esta.
+
+Cualquier cambio que subas a la rama que hayas conectado se volverá a
+desplegar solo. Si más adelante prefieres pasarte a tu propio servidor,
+la sección siguiente explica esa vía.
+
+## Alternativa: tu propio servidor (VPS)
+
+Esta vía es más barata (un VPS pequeño de Hetzner o similar ronda 4-5
+€/mes) pero exige que sigas los pasos por terminal (SSH) tú mismo, o que
+me des acceso a la máquina para hacerlo por ti.
+
+### Requisitos del servidor
 
 - Node.js 18 o superior (probado con Node 22).
 - Un dominio o IP donde alojarlo, idealmente con HTTPS (necesario para que
@@ -54,7 +97,7 @@ que el organizador los publica, y login real solo para el administrador.
   micrófono/cámara u otras APIs del móvil no den problemas, aunque esta
   app no las usa).
 
-## Puesta en marcha
+### Puesta en marcha
 
 ```bash
 cd votacion-monologos
@@ -137,9 +180,10 @@ mantener la conexión en vivo.
 
 ## Copias de seguridad
 
-Todo el estado (ediciones, votos, cuenta de administrador) vive en
-`data/votacion.db`. Haz una copia de ese archivo tras cada evento si
-quieres conservar el histórico fuera del servidor.
+Todo el estado (ediciones, votos, cuenta de administrador) vive en un
+único archivo SQLite: `data/votacion.db` (o `<DATA_DIR>/votacion.db` si
+usas la variable `DATA_DIR`, como en Railway). Descárgalo y guárdalo tras
+cada evento si quieres conservar el histórico fuera del servidor.
 
 ## Pendiente / posibles mejoras futuras
 
