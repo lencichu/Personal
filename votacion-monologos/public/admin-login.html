@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Acceso organizador — Concurso de monólogos</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <h1>Acceso del organizador</h1>
+  <p class="subtitle">Esta sección es solo para quien organiza el concurso.</p>
+
+  <div style="width:100%;max-width:420px">
+    <label>Usuario</label>
+    <input type="text" id="username" autocomplete="username" />
+    <label>Contraseña</label>
+    <input type="password" id="password" autocomplete="current-password" />
+    <button class="btn btn-primary" id="loginBtn">Entrar</button>
+
+    <p style="text-align:center"><button class="btn-ghost" id="toggleRegister">¿Primera vez? Registrar administrador</button></p>
+
+    <div id="registerBox" style="display:none">
+      <label>Código de configuración</label>
+      <input type="password" id="setupToken" autocomplete="off" />
+      <p class="subtitle" style="margin:6px 0 0;text-align:left">Te lo has dado tú mismo al configurar el servidor (ADMIN_SETUP_TOKEN en el .env). Sin él no se puede crear la cuenta.</p>
+      <button class="btn btn-secondary" id="registerBtn">Registrar</button>
+    </div>
+
+    <p id="msg" style="color:#ff5b7f;text-align:center"></p>
+  </div>
+
+  <script>
+    const msg = document.getElementById('msg');
+
+    document.getElementById('toggleRegister').onclick = () => {
+      const box = document.getElementById('registerBox');
+      box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    };
+
+    document.getElementById('loginBtn').onclick = async () => {
+      msg.textContent = '';
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if (res.ok) {
+        location.href = 'admin.html';
+      } else {
+        const d = await res.json().catch(() => ({}));
+        msg.textContent = d.error || 'Usuario o contraseña incorrectos.';
+      }
+    };
+
+    document.getElementById('registerBtn').onclick = async () => {
+      msg.textContent = '';
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const setupToken = document.getElementById('setupToken').value;
+      const res = await fetch('/api/admin/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, setupToken })
+      });
+      if (res.ok) {
+        location.href = 'admin.html';
+      } else {
+        const d = await res.json().catch(() => ({}));
+        msg.textContent = d.error || 'No se pudo registrar.';
+      }
+    };
+  </script>
+</body>
+</html>

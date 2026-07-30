@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Resultados — Concurso de monólogos</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <h1 id="title">Resultados</h1>
+  <p class="subtitle" id="subtitle">Cargando…</p>
+  <div id="app"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const app = document.getElementById('app');
+    const subtitle = document.getElementById('subtitle');
+    const title = document.getElementById('title');
+
+    let state = null;
+
+    onState((s) => {
+      state = s;
+      render();
+    });
+
+    function render() {
+      if (!state || !state.editionId) {
+        title.textContent = 'Resultados';
+        subtitle.textContent = 'Todavía no hay ninguna votación configurada.';
+        app.innerHTML = '';
+        return;
+      }
+
+      title.textContent = 'Concurso de monólogos ' + state.year;
+
+      if (!state.published || !state.results) {
+        subtitle.textContent = '';
+        app.innerHTML = `<div class="status-box">🤫 Los resultados aún no se han publicado.<br>Vuelve a mirar en un rato.</div>`;
+        return;
+      }
+
+      subtitle.textContent = 'En directo';
+      const { counts, total } = state.results;
+      const names = state.names || [];
+      const max = Math.max(1, ...counts);
+      const rows = names.map((name, idx) => ({
+        name,
+        idx,
+        votes: counts[idx] || 0,
+        pct: total > 0 ? Math.round(((counts[idx] || 0) / total) * 100) : 0
+      }));
+      rows.sort((a, b) => b.votes - a.votes);
+
+      app.innerHTML = `
+        <div class="results-list">
+          ${rows
+            .map(
+              (r, pos) => `
+            <div class="result-row ${pos === 0 && r.votes > 0 ? 'leader' : ''}">
+              <div class="top">
+                <span>${String(r.idx + 1).padStart(2, '0')} · ${escapeHtml(r.name)}</span>
+                <span>${r.votes} voto${r.votes === 1 ? '' : 's'} (${r.pct}%)</span>
+              </div>
+              <div class="bar-bg"><div class="bar-fill" style="width:${(r.votes / max) * 100}%"></div></div>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+        <div class="total-votes">Total de votos: ${total}</div>
+      `;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Organizador — Concurso de monólogos</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <h1>Panel del organizador</h1>
+  <p class="subtitle" id="subtitle"></p>
+  <div id="app"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const app = document.getElementById('app');
+    const subtitle = document.getElementById('subtitle');
+    const socket = io();
+
+    let currentAdminState = null;
+
+    init();
+
+    async function init() {
+      const res = await fetch('/api/admin/me');
+      if (!res.ok) {
+        location.href = 'admin-login.html';
+        return;
+      }
+      const me = await res.json();
+      subtitle.textContent = 'Conectado como ' + me.username;
+      renderShell();
+
+      socket.on('admin-state', (s) => {
+        currentAdminState = s;
+        renderActiveSection();
+      });
+      fetch('/api/admin/state')
+        .then((r) => r.json())
+        .then((s) => {
+          currentAdminState = s;
+          renderActiveSection();
+        });
+
+      renderNewEditionForm();
+      renderHistory();
+    }
+
+    function renderShell() {
+      app.innerHTML = `
+        <button class="btn-ghost" id="logoutBtn" style="margin-bottom:14px">Cerrar sesión</button>
+        <div class="panel-section" id="activeSection"></div>
+        <div class="panel-section" id="newEditionSection"></div>
+        <div class="panel-section" id="historySection"></div>
+      `;
+      document.getElementById('logoutBtn').onclick = async () => {
+        await fetch('/api/admin/logout', { method: 'POST' });
+        location.href = 'admin-login.html';
+      };
+    }
+
+    function statusLabel(status) {
+      return { draft: 'SIN EMPEZAR', voting: 'VOTACIÓN ABIERTA', closed: 'CERRADA' }[status] || status;
+    }
+
+    function renderActiveSection() {
+      const el = document.getElementById('activeSection');
+      if (!el) return;
+      const s = currentAdminState;
+
+      if (!s || !s.editionId) {
+        el.innerHTML = `<h2>Edición activa</h2><p>No hay ninguna edición activa todavía. Crea una abajo.</p>`;
+        return;
+      }
+
+      const votarUrl = new URL('votar.html', location.href).toString();
+      const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(votarUrl);
+
+      el.innerHTML = `
+        <h2>Edición activa — ${s.year}
+          <span class="pill ${s.status}">${statusLabel(s.status)}</span>
+          ${s.published ? '<span class="pill published">PUBLICADO</span>' : ''}
+        </h2>
+        <p>${(s.names || []).map((n, i) => (i + 1) + '. ' + escapeHtml(n)).join('<br>')}</p>
+
+        <div class="row">
+          <button class="btn btn-primary" id="startBtn" ${s.status !== 'draft' ? 'disabled' : ''}>Iniciar votación (10 min)</button>
+          <button class="btn btn-danger" id="closeBtn" ${s.status !== 'voting' ? 'disabled' : ''}>Cerrar votación</button>
+        </div>
+        <div class="row">
+          <button class="btn btn-secondary" id="publishBtn">${s.published ? 'Ocultar resultados' : 'Publicar resultados'}</button>
+        </div>
+
+        <p style="margin-top:14px">
+          <strong>Votos en directo (total: ${s.results ? s.results.total : 0})</strong><br>
+          ${(s.names || []).map((n, i) => `${i + 1}. ${escapeHtml(n)}: ${s.results ? s.results.counts[i] || 0 : 0}`).join('<br>')}
+        </p>
+
+        <p style="margin-top:16px">Link para votar (compártelo o enseña el QR):</p>
+        <div class="link-box">${votarUrl}</div>
+        <div class="qr-box"><img src="${qrUrl}" alt="QR para votar" width="150" height="150" /></div>
+      `;
+
+      document.getElementById('startBtn').onclick = () => callAdmin(`/api/admin/editions/${s.editionId}/start`, 'POST');
+      document.getElementById('closeBtn').onclick = () => {
+        if (confirm('¿Cerrar la votación? Los votantes ya no podrán votar.')) {
+          callAdmin(`/api/admin/editions/${s.editionId}/close`, 'POST');
+        }
+      };
+      document.getElementById('publishBtn').onclick = () =>
+        callAdmin(`/api/admin/editions/${s.editionId}/publish`, 'POST', { published: !s.published });
+    }
+
+    async function callAdmin(url, method, body) {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body !== undefined ? JSON.stringify(body) : undefined
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || 'Error');
+      }
+      renderHistory();
+      return res;
+    }
+
+    function renderNewEditionForm() {
+      const el = document.getElementById('newEditionSection');
+      const year = new Date().getFullYear();
+      el.innerHTML = `
+        <h2>Nueva edición</h2>
+        <label>Año</label>
+        <input type="number" id="f_year" value="${year}" />
+        <label>Fecha</label>
+        <input type="date" id="f_date" value="${new Date().toISOString().slice(0, 10)}" />
+        ${[1, 2, 3, 4, 5]
+          .map(
+            (n) => `
+          <label>Participante ${n}</label>
+          <input type="text" id="f_name_${n}" placeholder="Nombre del participante ${n}" />
+        `
+          )
+          .join('')}
+        <button class="btn btn-primary" id="createBtn">Crear y activar edición</button>
+      `;
+      document.getElementById('createBtn').onclick = createEdition;
+    }
+
+    async function createEdition() {
+      const year = document.getElementById('f_year').value.trim();
+      const date = document.getElementById('f_date').value;
+      const names = [1, 2, 3, 4, 5].map((n) => document.getElementById('f_name_' + n).value.trim());
+
+      if (!year || names.some((n) => !n)) {
+        alert('Rellena el año y los 5 nombres.');
+        return;
+      }
+
+      const existing = await fetch('/api/admin/editions/' + year);
+      if (existing.ok) {
+        if (!confirm('Ya existe una edición para ' + year + '. ¿Sobrescribirla? Se borrarán sus votos.')) return;
+      }
+
+      const res = await fetch('/api/admin/editions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year, date, names })
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || 'No se pudo crear.');
+        return;
+      }
+      renderHistory();
+    }
+
+    async function renderHistory() {
+      const el = document.getElementById('historySection');
+      el.innerHTML = '<h2>Historial de ediciones</h2><p>Cargando…</p>';
+      const list = await fetch('/api/admin/editions').then((r) => r.json());
+      if (!list.length) {
+        el.innerHTML = '<h2>Historial de ediciones</h2><p>Todavía no hay ninguna edición registrada.</p>';
+        return;
+      }
+      el.innerHTML =
+        '<h2>Historial de ediciones</h2>' +
+        list
+          .map(
+            (ed) => `
+        <div class="history-item">
+          <strong>${ed.year}</strong> (${ed.date || '—'})
+          <span class="pill ${ed.status}">${statusLabel(ed.status)}</span>
+          ${ed.published ? '<span class="pill published">PUBLICADO</span>' : ''}
+          ${ed.active ? ' — <em>activa</em>' : `<button class="btn-ghost" onclick="activateEdition('${ed.id}')">activar</button>`}
+          <br><small>${ed.names.map((n, i) => `${n}: ${ed.counts[i] || 0}`).join(' · ')}</small>
+        </div>
+      `
+          )
+          .join('');
+    }
+
+    async function activateEdition(id) {
+      if (!confirm('¿Activar la edición ' + id + '? Sustituirá a la edición activa actual como destino del link de votación.')) return;
+      await callAdmin(`/api/admin/editions/${id}/activate`, 'POST');
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
