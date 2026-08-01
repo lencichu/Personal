@@ -171,6 +171,12 @@ app.get('/api/admin/state', requireAdmin, (req, res) => {
   res.json(buildAdminState());
 });
 
+app.get('/api/admin/backup', requireAdmin, (req, res) => {
+  dbLayer.checkpoint();
+  const filename = `votacion-monologos-backup-${new Date().toISOString().slice(0, 10)}.db`;
+  res.download(dbLayer.DB_PATH, filename);
+});
+
 app.get('/api/admin/editions', requireAdmin, (req, res) => {
   const activeId = dbLayer.getActiveEditionId();
   const editions = dbLayer.listEditions().map((ed) => ({

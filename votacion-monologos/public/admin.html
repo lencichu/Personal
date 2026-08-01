@@ -52,6 +52,15 @@
         <div class="panel-section" id="activeSection"></div>
         <div class="panel-section" id="newEditionSection"></div>
         <div class="panel-section" id="historySection"></div>
+        <div class="panel-section">
+          <h2>Copia de seguridad</h2>
+          <p style="font-size:0.9rem;color:var(--text-dim)">
+            Descarga un archivo con todas las ediciones y votos guardados hasta ahora.
+            Guárdalo en tu ordenador, sobre todo antes de dar de baja o dejar de pagar
+            el servidor donde esté alojada la app, para no perder el histórico.
+          </p>
+          <a class="btn btn-secondary" href="/api/admin/backup" download>Descargar copia de seguridad</a>
+        </div>
       `;
       document.getElementById('logoutBtn').onclick = async () => {
         await fetch('/api/admin/logout', { method: 'POST' });

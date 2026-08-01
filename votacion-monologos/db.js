@@ -7,8 +7,16 @@ const fs = require('fs');
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const db = new Database(path.join(DATA_DIR, 'votacion.db'));
+const DB_PATH = path.join(DATA_DIR, 'votacion.db');
+const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+
+// El modo WAL deja parte de los datos recientes en un archivo -wal aparte;
+// esto vuelca todo al .db principal para que una copia de ese único archivo
+// sea siempre completa y válida.
+function checkpoint() {
+  db.pragma('wal_checkpoint(TRUNCATE)');
+}
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS admins (
@@ -163,6 +171,8 @@ function getAdminByUsername(username) {
 }
 
 module.exports = {
+  DB_PATH,
+  checkpoint,
   getSetting,
   setSetting,
   getActiveEditionId,
