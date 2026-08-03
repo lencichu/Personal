@@ -9,6 +9,7 @@
 <body>
   <h1 id="title">Concurso de monólogos</h1>
   <p class="subtitle" id="subtitle">Cargando…</p>
+  <img id="banner" class="banner" style="display:none" alt="" />
   <div id="app"></div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -43,6 +44,14 @@
 
     function render() {
       if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+
+      const bannerEl = document.getElementById('banner');
+      if (state && state.banner) {
+        bannerEl.src = state.banner;
+        bannerEl.style.display = 'block';
+      } else {
+        bannerEl.style.display = 'none';
+      }
 
       if (!state || !state.editionId) {
         title.textContent = 'Concurso de monólogos';
@@ -92,7 +101,12 @@
       names.forEach((name, idx) => {
         const btn = document.createElement('button');
         btn.className = 'candidate';
-        btn.innerHTML = `<span class="num">${String(idx + 1).padStart(2, '0')}</span><span class="name">${escapeHtml(name)}</span>`;
+        const photoUrl = state.photos && state.photos[idx];
+        btn.innerHTML = `
+          <span class="num">${String(idx + 1).padStart(2, '0')}</span>
+          ${photoUrl ? `<img class="photo" src="${photoUrl}" alt="" />` : ''}
+          <span class="name">${escapeHtml(name)}</span>
+        `;
         btn.onclick = () => selectCandidate(idx);
         grid.appendChild(btn);
       });

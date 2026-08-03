@@ -1,10 +1,13 @@
 require('dotenv').config();
 
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
+const { spawn } = require('child_process');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const multer = require('multer');
 const { Server } = require('socket.io');
 
 const dbLayer = require('./db');
@@ -13,6 +16,9 @@ const { COOKIE_NAME, hashPassword, verifyPassword, signToken, verifyToken, requi
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+const UPLOADS_DIR = path.join(dbLayer.DATA_DIR, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -20,6 +26,7 @@ const io = new Server(server);
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 function cookieOpts(maxAgeMs) {
   return {
@@ -43,6 +50,43 @@ function ensureVoterId(req, res, next) {
 }
 app.use(ensureVoterId);
 
+const photoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+      cb(null, `${req.params.id}-${file.fieldname}-${Date.now()}${ext}`);
+    }
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) {
+      return cb(new Error('Solo se admiten imágenes JPG, PNG, WEBP o GIF.'));
+    }
+    cb(null, true);
+  }
+});
+
+const photoUploadFields = [
+  { name: 'participant_0', maxCount: 1 },
+  { name: 'participant_1', maxCount: 1 },
+  { name: 'participant_2', maxCount: 1 },
+  { name: 'participant_3', maxCount: 1 },
+  { name: 'participant_4', maxCount: 1 },
+  { name: 'banner', maxCount: 1 }
+];
+
+function toUploadUrl(filename) {
+  return filename ? '/uploads/' + filename : null;
+}
+
+function editionMediaUrls(edition) {
+  return {
+    photos: edition.photos.map(toUploadUrl),
+    banner: toUploadUrl(edition.banner)
+  };
+}
+
 function buildPublicState() {
   const editionId = dbLayer.getActiveEditionId();
   const edition = editionId && dbLayer.getEdition(editionId);
@@ -56,7 +100,8 @@ function buildPublicState() {
     timerStartedAt: edition.timerStartedAt,
     timerDurationSec: edition.timerDurationSec,
     published: edition.published,
-    results: null
+    results: null,
+    ...editionMediaUrls(edition)
   };
   if (edition.published) {
     state.results = dbLayer.getVoteCounts(edition.id);
@@ -77,7 +122,8 @@ function buildAdminState() {
     timerStartedAt: edition.timerStartedAt,
     timerDurationSec: edition.timerDurationSec,
     published: edition.published,
-    results: dbLayer.getVoteCounts(edition.id)
+    results: dbLayer.getVoteCounts(edition.id),
+    ...editionMediaUrls(edition)
   };
 }
 
@@ -173,14 +219,25 @@ app.get('/api/admin/state', requireAdmin, (req, res) => {
 
 app.get('/api/admin/backup', requireAdmin, (req, res) => {
   dbLayer.checkpoint();
-  const filename = `votacion-monologos-backup-${new Date().toISOString().slice(0, 10)}.db`;
-  res.download(dbLayer.DB_PATH, filename);
+  const filename = `votacion-monologos-backup-${new Date().toISOString().slice(0, 10)}.tar.gz`;
+  const targets = ['votacion.db'];
+  if (fs.existsSync(UPLOADS_DIR) && fs.readdirSync(UPLOADS_DIR).length > 0) targets.push('uploads');
+
+  res.setHeader('Content-Type', 'application/gzip');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  const tar = spawn('tar', ['-czf', '-', '-C', dbLayer.DATA_DIR, ...targets]);
+  tar.stdout.pipe(res);
+  tar.on('error', () => {
+    if (!res.headersSent) res.status(500).json({ error: 'No se pudo generar la copia de seguridad.' });
+  });
 });
 
 app.get('/api/admin/editions', requireAdmin, (req, res) => {
   const activeId = dbLayer.getActiveEditionId();
   const editions = dbLayer.listEditions().map((ed) => ({
     ...ed,
+    ...editionMediaUrls(ed),
     active: ed.id === activeId,
     counts: dbLayer.getVoteCounts(ed.id).counts
   }));
@@ -190,7 +247,32 @@ app.get('/api/admin/editions', requireAdmin, (req, res) => {
 app.get('/api/admin/editions/:id', requireAdmin, (req, res) => {
   const edition = dbLayer.getEdition(req.params.id);
   if (!edition) return res.status(404).json({ error: 'No existe esa edición.' });
-  res.json(edition);
+  res.json({ ...edition, ...editionMediaUrls(edition) });
+});
+
+app.post('/api/admin/editions/:id/photos', requireAdmin, photoUpload.fields(photoUploadFields), (req, res) => {
+  const edition = dbLayer.getEdition(req.params.id);
+  if (!edition) return res.status(404).json({ error: 'No existe esa edición.' });
+
+  const photos = edition.photos.slice();
+  let banner = edition.banner;
+
+  for (let i = 0; i < 5; i++) {
+    const file = req.files && req.files['participant_' + i] && req.files['participant_' + i][0];
+    if (file) {
+      if (photos[i]) fs.unlink(path.join(UPLOADS_DIR, photos[i]), () => {});
+      photos[i] = file.filename;
+    }
+  }
+  const bannerFile = req.files && req.files.banner && req.files.banner[0];
+  if (bannerFile) {
+    if (banner) fs.unlink(path.join(UPLOADS_DIR, banner), () => {});
+    banner = bannerFile.filename;
+  }
+
+  const updated = dbLayer.setPhotos(edition.id, photos, banner);
+  broadcast();
+  res.json({ ...updated, ...editionMediaUrls(updated) });
 });
 
 app.post('/api/admin/editions', requireAdmin, (req, res) => {
@@ -265,6 +347,14 @@ io.on('connection', (socket) => {
     socket.emit('admin-state', buildAdminState());
   }
   socket.emit('state', buildPublicState());
+});
+
+// Errores de subida de fotos (archivo demasiado grande, tipo no admitido, etc.)
+app.use((err, req, res, next) => {
+  if (err) {
+    return res.status(400).json({ error: err.message || 'Error al procesar el archivo.' });
+  }
+  next();
 });
 
 server.listen(PORT, () => {

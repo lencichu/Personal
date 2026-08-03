@@ -9,6 +9,7 @@
 <body>
   <h1 id="title">Resultados</h1>
   <p class="subtitle" id="subtitle">Cargando…</p>
+  <img id="banner" class="banner" style="display:none" alt="" />
   <div id="app"></div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -26,6 +27,14 @@
     });
 
     function render() {
+      const bannerEl = document.getElementById('banner');
+      if (state && state.banner) {
+        bannerEl.src = state.banner;
+        bannerEl.style.display = 'block';
+      } else {
+        bannerEl.style.display = 'none';
+      }
+
       if (!state || !state.editionId) {
         title.textContent = 'Resultados';
         subtitle.textContent = 'Todavía no hay ninguna votación configurada.';
@@ -56,17 +65,18 @@
       app.innerHTML = `
         <div class="results-list">
           ${rows
-            .map(
-              (r, pos) => `
+            .map((r, pos) => {
+              const photoUrl = state.photos && state.photos[r.idx];
+              return `
             <div class="result-row ${pos === 0 && r.votes > 0 ? 'leader' : ''}">
               <div class="top">
-                <span>${String(r.idx + 1).padStart(2, '0')} · ${escapeHtml(r.name)}</span>
+                <span>${String(r.idx + 1).padStart(2, '0')} ${photoUrl ? `<img class="thumb" src="${photoUrl}" alt="" />` : '· '}${escapeHtml(r.name)}</span>
                 <span>${r.votes} voto${r.votes === 1 ? '' : 's'} (${r.pct}%)</span>
               </div>
               <div class="bar-bg"><div class="bar-fill" style="width:${(r.votes / max) * 100}%"></div></div>
             </div>
-          `
-            )
+          `;
+            })
             .join('')}
         </div>
         <div class="total-votes">Total de votos: ${total}</div>

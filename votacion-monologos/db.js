@@ -53,6 +53,18 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `);
 
+// Migraciones ligeras: añade columnas nuevas si vienen de una base de datos
+// creada antes de que existieran (una base de datos ya en uso en producción
+// no puede recrearse desde cero sin perder los votos).
+function ensureColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+ensureColumn('editions', 'photos', "TEXT NOT NULL DEFAULT '[null,null,null,null,null]'");
+ensureColumn('editions', 'banner', 'TEXT');
+
 function getSetting(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
   return row ? row.value : null;
@@ -79,7 +91,9 @@ function rowToEdition(row) {
     timerStartedAt: row.timer_started_at,
     timerDurationSec: row.timer_duration_sec,
     published: !!row.published,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    photos: JSON.parse(row.photos || '[null,null,null,null,null]'),
+    banner: row.banner || null
   };
 }
 
@@ -127,6 +141,11 @@ function setPublished(id, published) {
   return getEdition(id);
 }
 
+function setPhotos(id, photos, banner) {
+  db.prepare('UPDATE editions SET photos = ?, banner = ? WHERE id = ?').run(JSON.stringify(photos), banner, id);
+  return getEdition(id);
+}
+
 function getVoteCounts(editionId) {
   const rows = db
     .prepare('SELECT candidate_index, COUNT(*) as n FROM votes WHERE edition_id = ? GROUP BY candidate_index')
@@ -171,6 +190,7 @@ function getAdminByUsername(username) {
 }
 
 module.exports = {
+  DATA_DIR,
   DB_PATH,
   checkpoint,
   getSetting,
@@ -182,6 +202,7 @@ module.exports = {
   startVoting,
   closeVoting,
   setPublished,
+  setPhotos,
   getVoteCounts,
   getVoteStatus,
   insertVote,

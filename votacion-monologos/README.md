@@ -178,16 +178,26 @@ mantener la conexión en vivo.
 4. Pulsa "Iniciar votación" cuando toque, "Cerrar votación" cuando
    termine, y "Publicar resultados" cuando quieras que se vean.
 
+## Fotos y banner
+
+Desde el panel del organizador, en la sección "Fotos y banner" de la
+edición activa, puedes subir una foto por participante y un banner ancho
+para esa edición (JPG, PNG, WEBP o GIF, máx. 8 MB cada archivo). Se
+muestran en `votar.html` (tarjetas y cabecera) y en `resultados.html`.
+Las imágenes se guardan en `<DATA_DIR>/uploads/`, junto a la base de
+datos, así que sobreviven a los despliegues igual que los votos.
+
 ## Copias de seguridad
 
-Todo el estado (ediciones, votos, cuenta de administrador) vive en un
-único archivo SQLite: `data/votacion.db` (o `<DATA_DIR>/votacion.db` si
-usas la variable `DATA_DIR`, como en Railway). Descárgalo y guárdalo tras
-cada evento si quieres conservar el histórico fuera del servidor.
+Todo el estado (ediciones, votos, cuenta de administrador, fotos y
+banners) vive en `data/` (o `<DATA_DIR>/` si usas esa variable, como en
+Railway): el archivo `votacion.db` más la carpeta `uploads/`. El botón
+"Descargar copia de seguridad" del panel te da un único `.tar.gz` con
+todo eso junto — descárgalo y guárdalo tras cada evento si quieres
+conservar el histórico fuera del servidor.
 
 ## Pendiente / posibles mejoras futuras
 
-- [ ] Fotos de los participantes en las tarjetas de voto.
 - [ ] Exportar el historial de votos a CSV desde el panel.
 - [ ] Registro de varias cuentas de administrador con roles distintos, si
       alguna vez hace falta que organice más de una persona.

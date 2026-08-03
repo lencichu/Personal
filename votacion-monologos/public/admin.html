@@ -34,12 +34,14 @@
       socket.on('admin-state', (s) => {
         currentAdminState = s;
         renderActiveSection();
+        renderPhotosSection();
       });
       fetch('/api/admin/state')
         .then((r) => r.json())
         .then((s) => {
           currentAdminState = s;
           renderActiveSection();
+          renderPhotosSection();
         });
 
       renderNewEditionForm();
@@ -50,6 +52,7 @@
       app.innerHTML = `
         <button class="btn-ghost" id="logoutBtn" style="margin-bottom:14px">Cerrar sesión</button>
         <div class="panel-section" id="activeSection"></div>
+        <div class="panel-section" id="photosSection"></div>
         <div class="panel-section" id="newEditionSection"></div>
         <div class="panel-section" id="historySection"></div>
         <div class="panel-section">
@@ -118,6 +121,63 @@
       };
       document.getElementById('publishBtn').onclick = () =>
         callAdmin(`/api/admin/editions/${s.editionId}/publish`, 'POST', { published: !s.published });
+    }
+
+    function renderPhotosSection() {
+      const el = document.getElementById('photosSection');
+      if (!el) return;
+      const s = currentAdminState;
+
+      if (!s || !s.editionId) {
+        el.innerHTML = `<h2>Fotos y banner</h2><p>Crea primero una edición para poder subir fotos.</p>`;
+        return;
+      }
+
+      const names = s.names || [];
+      const photos = s.photos || [null, null, null, null, null];
+
+      el.innerHTML = `
+        <h2>Fotos y banner</h2>
+        <p style="font-size:0.9rem;color:var(--text-dim)">Opcional. JPG, PNG, WEBP o GIF, máx. 8 MB cada una.</p>
+        <form id="photosForm">
+          <label>Banner de la edición (imagen ancha)</label>
+          ${s.banner ? `<img src="${s.banner}" style="max-width:100%;max-height:140px;border-radius:10px;display:block;margin-bottom:8px" />` : ''}
+          <input type="file" accept="image/*" name="banner" />
+
+          ${names
+            .map(
+              (n, i) => `
+            <label>Foto de ${escapeHtml(n)}</label>
+            ${photos[i] ? `<img src="${photos[i]}" style="width:72px;height:72px;object-fit:cover;border-radius:10px;display:block;margin-bottom:8px" />` : ''}
+            <input type="file" accept="image/*" name="participant_${i}" />
+          `
+            )
+            .join('')}
+
+          <button type="submit" class="btn btn-primary">Subir fotos</button>
+          <p id="photosMsg" style="color:var(--accent-2);min-height:1.2em"></p>
+        </form>
+      `;
+
+      document.getElementById('photosForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const msg = document.getElementById('photosMsg');
+        msg.textContent = 'Subiendo…';
+        try {
+          const formData = new FormData(e.target);
+          const res = await fetch(`/api/admin/editions/${s.editionId}/photos`, { method: 'POST', body: formData });
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            throw new Error(d.error || 'No se pudo subir.');
+          }
+          msg.textContent = 'Fotos actualizadas.';
+          const updated = await fetch('/api/admin/state').then((r) => r.json());
+          currentAdminState = updated;
+          renderPhotosSection();
+        } catch (err) {
+          msg.textContent = err.message;
+        }
+      };
     }
 
     async function callAdmin(url, method, body) {
