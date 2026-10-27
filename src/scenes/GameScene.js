@@ -27,6 +27,14 @@ const BALL_SCALE_FAR = 0.22;
 const KEEPER_SCALE_NEAR = 0.65;
 const KEEPER_SCALE_FAR = 0.5;
 
+// Barrera de defensores que aparece en dificultad alta (ver difficulty.js).
+const WALL_OFFSET = 90;
+const WALL_WIDTH = 34;
+const WALL_HEIGHT = 70;
+const WALL_GAP = 6;
+const WALL_TINT = 0xe05a5a;
+const KEEPER_HALF_WIDTH = 25;
+
 const MIN_DRAG = 40;
 const MAX_DRAG = 260;
 const MIN_SPEED = 10;
@@ -68,9 +76,11 @@ class GameScene extends Phaser.Scene {
   init() {
     this.score = 0;
     this.lives = START_LIVES;
+    this.streak = 0;
     this.highScore = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
     this.difficulty = getDifficulty(this.score);
     this.currentTier = -1;
+    this.wallActive = false;
 
     this.shotInFlight = false;
     this.shotResolved = false;
@@ -89,6 +99,7 @@ class GameScene extends Phaser.Scene {
     this.createBounds();
     this.applyDifficultyVisuals(true);
     this.createKeeper();
+    this.refreshWall();
     this.createBall();
     this.createHud();
     this.createPauseOverlay();
@@ -214,6 +225,9 @@ class GameScene extends Phaser.Scene {
     if (this.keeperSprite) {
       this.keeperBaseScale = Phaser.Math.Linear(KEEPER_SCALE_NEAR, KEEPER_SCALE_FAR, depthT(KEEPER_LOGICAL_Y)) * scale;
     }
+    if (this.wallSprites) {
+      this.syncWallVisual();
+    }
   }
 
   // ---------- Portero ----------
@@ -232,9 +246,8 @@ class GameScene extends Phaser.Scene {
     this.syncKeeperVisual();
 
     this.keeperDirection = 1;
-    const keeperHalfWidth = 25;
-    this.keeperLeftLimit = CENTER_X - GOAL_HALF_WIDTH + keeperHalfWidth;
-    this.keeperRightLimit = CENTER_X + GOAL_HALF_WIDTH - keeperHalfWidth;
+    this.keeperLeftLimit = CENTER_X - GOAL_HALF_WIDTH + KEEPER_HALF_WIDTH;
+    this.keeperRightLimit = CENTER_X + GOAL_HALF_WIDTH - KEEPER_HALF_WIDTH;
   }
 
   syncKeeperVisual() {
@@ -258,6 +271,51 @@ class GameScene extends Phaser.Scene {
 
     MatterBody.setPosition(this.keeperBody, { x: next, y: KEEPER_LOGICAL_Y });
     this.syncKeeperVisual();
+  }
+
+  // ---------- Barrera ----------
+  // Dos defensores fijos a los costados del arquero, que aparecen en
+  // dificultad alta (ver difficulty.js). No se mueven: tapan el centro y
+  // dejan los huecos laterales (entre barrera y palo) como vias de gol.
+
+  refreshWall() {
+    if (this.difficulty.wallActive && !this.wallActive) {
+      this.wallActive = true;
+      this.createWallDefenders();
+
+      const corridorHalf = WALL_OFFSET - WALL_WIDTH / 2 - WALL_GAP - KEEPER_HALF_WIDTH;
+      this.keeperLeftLimit = Math.max(this.keeperLeftLimit, CENTER_X - corridorHalf);
+      this.keeperRightLimit = Math.min(this.keeperRightLimit, CENTER_X + corridorHalf);
+
+      const clampedX = Phaser.Math.Clamp(this.keeperBody.position.x, this.keeperLeftLimit, this.keeperRightLimit);
+      MatterBody.setPosition(this.keeperBody, { x: clampedX, y: KEEPER_LOGICAL_Y });
+      this.syncKeeperVisual();
+    } else if (this.wallActive) {
+      this.syncWallVisual();
+    }
+  }
+
+  createWallDefenders() {
+    this.wallBodies = [];
+    this.wallSprites = [];
+    for (const side of [-1, 1]) {
+      const x = CENTER_X + side * WALL_OFFSET;
+      const body = this.matter.add.rectangle(x, KEEPER_LOGICAL_Y, WALL_WIDTH, WALL_HEIGHT, {
+        isStatic: true,
+        label: 'wallDefender',
+      });
+      const sprite = this.add.image(CENTER_X, HORIZON_Y, 'defender_placeholder').setTint(WALL_TINT);
+      this.wallBodies.push(body);
+      this.wallSprites.push(sprite);
+    }
+    this.syncWallVisual();
+  }
+
+  syncWallVisual() {
+    this.wallBodies.forEach((body, i) => {
+      const screen = toScreen(body.position.x, KEEPER_LOGICAL_Y);
+      this.wallSprites[i].setPosition(screen.x, screen.y).setScale(this.keeperBaseScale * 0.92);
+    });
   }
 
   // ---------- Balon ----------
@@ -364,6 +422,8 @@ class GameScene extends Phaser.Scene {
       .setAlpha(0);
 
     this.aimGraphics = this.add.graphics();
+    this.comboGraphics = this.add.graphics().setDepth(5);
+    this.messageText.setDepth(6);
 
     this.updateHud();
   }
@@ -535,6 +595,10 @@ class GameScene extends Phaser.Scene {
         this.resolveShot('saved');
         return;
       }
+      if (labels.includes('ball') && labels.includes('wallDefender')) {
+        this.resolveShot('blocked');
+        return;
+      }
       if (labels.includes('ball') && labels.includes('backWall')) {
         this.resolveShot('wide');
         return;
@@ -553,24 +617,35 @@ class GameScene extends Phaser.Scene {
     this.curveAccel = 0;
     MatterBody.setVelocity(this.ballBody, { x: 0, y: 0 });
 
+    let comboTriggered = false;
+
     if (outcome === 'goal') {
       this.score += 1;
+      this.streak += 1;
       if (this.score > this.highScore) {
         this.highScore = this.score;
         localStorage.setItem(HIGH_SCORE_KEY, String(this.highScore));
       }
       this.difficulty = getDifficulty(this.score);
-      this.showMessage('¡GOL!', '#ffe066');
+
+      if (this.streak > 0 && this.streak % 3 === 0) {
+        comboTriggered = true;
+        this.showComboCelebration(this.streak);
+      } else {
+        this.showMessage('¡GOL!', '#ffe066');
+      }
     } else {
+      this.streak = 0;
       this.lives -= 1;
-      const labels = { saved: '¡PARADA!', wide: 'FUERA', stopped: 'CORTO' };
+      const labels = { saved: '¡PARADA!', wide: 'FUERA', stopped: 'CORTO', blocked: '¡BLOQUEADO!' };
       this.showMessage(labels[outcome] || 'FALLO', '#ff6b6b');
     }
 
     this.updateHud();
     this.applyDifficultyVisuals(false);
+    this.refreshWall();
 
-    this.time.delayedCall(900, () => this.afterShot());
+    this.time.delayedCall(comboTriggered ? 1500 : 900, () => this.afterShot());
   }
 
   showMessage(text, color) {
@@ -584,6 +659,58 @@ class GameScene extends Phaser.Scene {
       alpha: { from: 1, to: 0 },
       duration: 850,
       ease: 'Cubic.Out',
+    });
+  }
+
+  // Estrella de celebracion dibujada a mano (sin assets), para la racha de
+  // goles seguidos: un poligono con puntas alternando radio largo/corto.
+  drawStarburst(graphics, cx, cy, spikes, outerRadius, innerRadius, color) {
+    graphics.clear();
+    graphics.fillStyle(color, 1);
+    graphics.beginPath();
+    const total = spikes * 2;
+    for (let i = 0; i < total; i++) {
+      const r = i % 2 === 0 ? outerRadius : innerRadius;
+      const angle = (Math.PI * i) / spikes - Math.PI / 2;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+      if (i === 0) graphics.moveTo(x, y);
+      else graphics.lineTo(x, y);
+    }
+    graphics.closePath();
+    graphics.fillPath();
+  }
+
+  showComboCelebration(streakCount) {
+    const cx = CENTER_X;
+    const cy = HORIZON_Y + 60;
+
+    // Se dibuja centrado en el origen local y se posiciona el objeto en
+    // (cx, cy), para que el tween de escala haga "pop" desde su propio
+    // centro en vez de estirarse desde la esquina del mundo.
+    this.drawStarburst(this.comboGraphics, 0, 0, 10, 95, 60, 0xffce33);
+    this.comboGraphics.setPosition(cx, cy).setAlpha(1);
+    this.comboGraphics.setScale(0.5);
+
+    this.messageText.setText(`¡${streakCount}\nSEGUIDOS!`);
+    this.messageText.setColor('#7a3b00');
+    this.messageText.setAlign('center');
+    this.messageText.setAlpha(1);
+    this.messageText.setScale(0.5);
+
+    this.tweens.add({
+      targets: [this.comboGraphics, this.messageText],
+      scale: 1,
+      duration: 280,
+      ease: 'Back.Out',
+    });
+    this.tweens.add({
+      targets: [this.comboGraphics, this.messageText],
+      alpha: { from: 1, to: 0 },
+      delay: 750,
+      duration: 500,
+      ease: 'Cubic.Out',
+      onComplete: () => this.comboGraphics.clear(),
     });
   }
 
