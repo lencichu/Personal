@@ -41,9 +41,13 @@ const MIN_SPEED = 10;
 const MAX_SPEED = 20;
 const MAX_DX = 160;
 const MAX_ANGLE_RAD = Phaser.Math.DegToRad(28);
-const CURVE_STRENGTH = 22;
-const CURVE_DECAY = 0.985;
-const CURVE_DURATION_MS = 300;
+// El efecto se aplica durante todo el vuelo (no solo al salir el tiro), para
+// que la pelota se vaya curvando de a poco como una rosca real en vez de
+// pegar un "tiron" cerca del pie y despues seguir derecha el resto del
+// camino. CURVE_DECAY es por frame a 60fps: con 0.996 el empuje lateral
+// sigue bien presente incluso pasado un segundo de vuelo.
+const CURVE_STRENGTH = 12;
+const CURVE_DECAY = 0.996;
 const STOP_SPEED_THRESHOLD = 0.6;
 // Cuanto debe desviarse el trazo del dedo (en px) respecto a la linea recta
 // entre el inicio y el final del gesto para alcanzar el efecto maximo.
@@ -88,7 +92,6 @@ class GameScene extends Phaser.Scene {
     this.dragging = false;
     this.dragPoints = [];
     this.curveAccel = 0;
-    this.curveTimer = 0;
     this.paused = false;
   }
 
@@ -574,7 +577,6 @@ class GameScene extends Phaser.Scene {
     MatterBody.setVelocity(this.ballBody, { x: vx, y: vy });
 
     this.curveAccel = curveNorm * CURVE_STRENGTH;
-    this.curveTimer = 0;
     this.shotInFlight = true;
     this.shotResolved = false;
     this.canShoot = false;
@@ -604,6 +606,10 @@ class GameScene extends Phaser.Scene {
         return;
       }
       if (labels.includes('ball') && labels.includes('sideWall')) {
+        this.resolveShot('wide');
+        return;
+      }
+      if (labels.includes('ball') && labels.includes('post')) {
         this.resolveShot('wide');
         return;
       }
@@ -743,13 +749,12 @@ class GameScene extends Phaser.Scene {
 
     if (this.shotInFlight) {
       const v = this.ballBody.velocity;
-      if (this.curveTimer < CURVE_DURATION_MS) {
+      if (Math.abs(this.curveAccel) > 0.01) {
         MatterBody.setVelocity(this.ballBody, {
           x: v.x + this.curveAccel * (delta / 1000),
           y: v.y,
         });
-        this.curveAccel *= CURVE_DECAY;
-        this.curveTimer += delta;
+        this.curveAccel *= Math.pow(CURVE_DECAY, delta / (1000 / 60));
       }
 
       const speed = Math.hypot(v.x, v.y);
