@@ -7,19 +7,25 @@ const CENTER_X = FIELD_WIDTH / 2;
 // Espacio logico (para fisica/colisiones). No es lo mismo que la pantalla.
 const BALL_LOGICAL_START = { x: CENTER_X, y: 710 };
 const GOAL_LOGICAL_Y = 130;
-const KEEPER_LOGICAL_Y = 300;
-const GOAL_HALF_WIDTH = 100;
+// El portero se para cerca de su propia linea (no a mitad de cancha), igual
+// que en la realidad: asi la porteria no queda tapada y el tiro tiene
+// recorrido de sobra para curvarse antes de llegar a el.
+const KEEPER_LOGICAL_Y = 175;
+const GOAL_HALF_WIDTH = 130;
+const GOAL_HEIGHT_LOGICAL = 85;
 const SIDE_MARGIN = 30;
 
 // Transformacion en perspectiva para que se vea el balon en primer plano
 // y la porteria/portero al fondo, como en el juego original.
 const FOREGROUND_Y = 560;
 const HORIZON_Y = 280;
-const PERSPECTIVE_FACTOR = 0.34;
+const PERSPECTIVE_FACTOR = 0.5;
 const BALL_SCALE_NEAR = 3.6;
-const BALL_SCALE_FAR = 0.85;
-const KEEPER_SCALE_NEAR = 1.7;
-const KEEPER_SCALE_FAR = 0.95;
+// El balon casi al fondo tiene que verse chico frente al arco, no como una
+// pelota de playa; el portero igual, bastante mas bajo que el travesano.
+const BALL_SCALE_FAR = 0.22;
+const KEEPER_SCALE_NEAR = 0.65;
+const KEEPER_SCALE_FAR = 0.5;
 
 const MIN_DRAG = 40;
 const MAX_DRAG = 260;
@@ -27,7 +33,7 @@ const MIN_SPEED = 10;
 const MAX_SPEED = 20;
 const MAX_DX = 160;
 const MAX_ANGLE_RAD = Phaser.Math.DegToRad(28);
-const CURVE_STRENGTH = 12;
+const CURVE_STRENGTH = 22;
 const CURVE_DECAY = 0.985;
 const CURVE_DURATION_MS = 300;
 const STOP_SPEED_THRESHOLD = 0.6;
@@ -188,7 +194,9 @@ class GameScene extends Phaser.Scene {
     const rightX = CENTER_X + GOAL_HALF_WIDTH;
     const leftScreen = toScreen(leftX, GOAL_LOGICAL_Y);
     const rightScreen = toScreen(rightX, GOAL_LOGICAL_Y);
-    const postH = 60 * scale;
+    // Misma logica de perspectiva que el ancho (toScreen), para que el arco
+    // mantenga una proporcion realista en vez de verse casi cuadrado.
+    const postH = GOAL_HEIGHT_LOGICAL * PERSPECTIVE_FACTOR * scale;
 
     this.goalGraphics.clear();
     this.goalGraphics.lineStyle(2, 0xffffff, 0.5);
@@ -528,6 +536,10 @@ class GameScene extends Phaser.Scene {
         return;
       }
       if (labels.includes('ball') && labels.includes('backWall')) {
+        this.resolveShot('wide');
+        return;
+      }
+      if (labels.includes('ball') && labels.includes('sideWall')) {
         this.resolveShot('wide');
         return;
       }
