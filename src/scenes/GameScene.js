@@ -27,10 +27,14 @@ const MIN_SPEED = 10;
 const MAX_SPEED = 20;
 const MAX_DX = 160;
 const MAX_ANGLE_RAD = Phaser.Math.DegToRad(28);
-const CURVE_STRENGTH = 0.8;
+const CURVE_STRENGTH = 12;
 const CURVE_DECAY = 0.985;
 const CURVE_DURATION_MS = 300;
 const STOP_SPEED_THRESHOLD = 0.6;
+// Cuanto debe desviarse el trazo del dedo (en px) respecto a la linea recta
+// entre el inicio y el final del gesto para alcanzar el efecto maximo.
+const CURVE_PATH_REF = 50;
+const MIN_POINT_SPACING = 4;
 
 const START_LIVES = 3;
 const HIGH_SCORE_KEY = 'flickKickFamily_highScore';
@@ -66,6 +70,7 @@ class GameScene extends Phaser.Scene {
     this.shotResolved = false;
     this.canShoot = true;
     this.dragging = false;
+    this.dragPoints = [];
     this.curveAccel = 0;
     this.curveTimer = 0;
     this.paused = false;
@@ -406,24 +411,44 @@ class GameScene extends Phaser.Scene {
     if (!this.canShoot || this.paused) return;
     this.dragging = true;
     this.dragStart = { x: pointer.x, y: pointer.y };
+    this.dragPoints = [{ x: pointer.x, y: pointer.y }];
   }
 
   onPointerMove(pointer) {
     if (!this.dragging) return;
+
+    const last = this.dragPoints[this.dragPoints.length - 1];
+    if (Phaser.Math.Distance.Between(last.x, last.y, pointer.x, pointer.y) >= MIN_POINT_SPACING) {
+      this.dragPoints.push({ x: pointer.x, y: pointer.y });
+    }
+
     const dx = pointer.x - this.dragStart.x;
     const dy = this.dragStart.y - pointer.y;
     const power = Phaser.Math.Clamp(dy / MAX_DRAG, 0, 1);
+    const curveNorm = this.computeCurveNorm(this.dragPoints);
 
     this.aimGraphics.clear();
     if (dy > 10) {
-      const color = dy >= MIN_DRAG ? 0xffe066 : 0x888888;
+      const ready = dy >= MIN_DRAG;
+      // Amarillo = tiro recto, celeste/naranja = curva hacia un lado u otro.
+      const curveColor = curveNorm > 0.08 ? 0x4fc3f7 : curveNorm < -0.08 ? 0xff8a65 : 0xffe066;
+      const color = ready ? curveColor : 0x888888;
+
       this.aimGraphics.lineStyle(4, color, 0.9);
       this.aimGraphics.beginPath();
       this.aimGraphics.moveTo(this.ballSprite.x, this.ballSprite.y);
-      this.aimGraphics.lineTo(this.ballSprite.x + dx * 0.6, this.ballSprite.y - dy * 0.6);
+      for (const p of this.dragPoints) {
+        const px = p.x - this.dragStart.x;
+        const py = this.dragStart.y - p.y;
+        this.aimGraphics.lineTo(this.ballSprite.x + px * 0.6, this.ballSprite.y - py * 0.6);
+      }
       this.aimGraphics.strokePath();
+
+      const tip = this.dragPoints[this.dragPoints.length - 1];
+      const tpx = tip.x - this.dragStart.x;
+      const tpy = this.dragStart.y - tip.y;
       this.aimGraphics.fillStyle(color, 0.9);
-      this.aimGraphics.fillCircle(this.ballSprite.x + dx * 0.6, this.ballSprite.y - dy * 0.6, 4 + power * 6);
+      this.aimGraphics.fillCircle(this.ballSprite.x + tpx * 0.6, this.ballSprite.y - tpy * 0.6, 4 + power * 6);
     }
   }
 
@@ -434,13 +459,42 @@ class GameScene extends Phaser.Scene {
 
     const dx = pointer.x - this.dragStart.x;
     const dy = this.dragStart.y - pointer.y;
+    const curveNorm = this.computeCurveNorm(this.dragPoints);
+    this.dragPoints = [];
 
     if (dy < MIN_DRAG) return;
 
-    this.shoot(dx, dy);
+    this.shoot(dx, dy, curveNorm);
   }
 
-  shoot(dx, dy) {
+  // Mide cuanto se desvia el trazo dibujado respecto a la linea recta entre
+  // el inicio y el final del gesto. Un trazo recto da 0 (tiro sin efecto);
+  // cuanto mas se "curva" el dedo hacia un lado, mayor el efecto hacia ese lado.
+  computeCurveNorm(points) {
+    if (!points || points.length < 3) return 0;
+
+    const s = points[0];
+    const e = points[points.length - 1];
+    const lineDx = e.x - s.x;
+    const lineDy = e.y - s.y;
+    const length = Math.hypot(lineDx, lineDy);
+    if (length < 1) return 0;
+
+    let maxAbsDist = 0;
+    let signedAtMax = 0;
+    for (const p of points) {
+      const cross = lineDx * (p.y - s.y) - lineDy * (p.x - s.x);
+      const dist = cross / length;
+      if (Math.abs(dist) > maxAbsDist) {
+        maxAbsDist = Math.abs(dist);
+        signedAtMax = dist;
+      }
+    }
+
+    return Phaser.Math.Clamp(signedAtMax / CURVE_PATH_REF, -1, 1);
+  }
+
+  shoot(dx, dy, curveNorm = 0) {
     const powerNorm = Phaser.Math.Clamp((dy - MIN_DRAG) / (MAX_DRAG - MIN_DRAG), 0, 1);
     const speed = Phaser.Math.Linear(MIN_SPEED, MAX_SPEED, powerNorm);
     const clampedDx = Phaser.Math.Clamp(dx, -MAX_DX, MAX_DX);
@@ -451,7 +505,7 @@ class GameScene extends Phaser.Scene {
 
     MatterBody.setVelocity(this.ballBody, { x: vx, y: vy });
 
-    this.curveAccel = (clampedDx / MAX_DX) * CURVE_STRENGTH;
+    this.curveAccel = curveNorm * CURVE_STRENGTH;
     this.curveTimer = 0;
     this.shotInFlight = true;
     this.shotResolved = false;
