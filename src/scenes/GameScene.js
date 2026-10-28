@@ -55,6 +55,10 @@ const MAX_LOFT_HEIGHT = 82;
 // ahi (remate firme) sale siempre raso.
 const LOFT_POWER_THRESHOLD = 0.6;
 const HEIGHT_VISUAL_SCALE = 1;
+// Una vez resuelto el tiro, si la pelota todavia estaba en el aire, cae por
+// su cuenta a este ritmo (unidades de altura por segundo al cuadrado) en vez
+// de quedar congelada a mitad de altura.
+const POST_SHOT_GRAVITY = 320;
 
 // Curva de altura en funcion del avance del tiro (0 = pie, 1 = linea de
 // gol): una parabola "estirada" que arranca en HEIGHT_RISE_START y todavia
@@ -153,6 +157,7 @@ class GameScene extends Phaser.Scene {
     this.curveAccel = 0;
     this.ballHeight = 0;
     this.loftPeakHeight = 0;
+    this.ballFallVelocity = 0;
     this.paused = false;
   }
 
@@ -748,12 +753,39 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // Antes esto apagaba la velocidad en seco (this.ballBody queda congelado
+  // en el aire o en el piso apenas se resuelve el tiro). Ahora, segun el
+  // resultado, la pelota sigue con algo de fisica real: rebota para atras
+  // si la ataja el arquero/un defensor, se frena de a poco contra la red si
+  // es gol, o se frena rodando si se va afuera. La fisica del motor
+  // (friccion, gravedad de altura en el update()) hace el resto.
+  applyPostShotReaction(outcome) {
+    const v = this.ballBody.velocity;
+
+    if (outcome === 'saved' || outcome === 'blocked') {
+      // Rechace: se aleja del arco (se invierte el avance) con menos fuerza
+      // y un poco de desvio lateral al azar, como una tapada real.
+      const sideKick = (Math.random() - 0.5) * 4;
+      MatterBody.setVelocity(this.ballBody, { x: v.x * 0.4 + sideKick, y: -v.y * 0.45 });
+    } else if (outcome === 'goal') {
+      // Sigue un poco hacia la red (cuerpo solido, con restitucion baja) y
+      // se frena ahi en vez de parar en seco a mitad de camino.
+      MatterBody.setVelocity(this.ballBody, { x: v.x * 0.3, y: v.y * 0.3 });
+    } else {
+      // Afuera / por arriba / corto: se frena bastante y rueda/cae por su
+      // cuenta en vez de clavarse.
+      MatterBody.setVelocity(this.ballBody, { x: v.x * 0.35, y: v.y * 0.35 });
+    }
+
+    this.ballFallVelocity = 0;
+  }
+
   resolveShot(outcome) {
     if (this.shotResolved) return;
     this.shotResolved = true;
     this.shotInFlight = false;
     this.curveAccel = 0;
-    MatterBody.setVelocity(this.ballBody, { x: 0, y: 0 });
+    this.applyPostShotReaction(outcome);
 
     let comboTriggered = false;
 
@@ -869,6 +901,7 @@ class GameScene extends Phaser.Scene {
     MatterBody.setVelocity(this.ballBody, { x: 0, y: 0 });
     this.ballHeight = 0;
     this.loftPeakHeight = 0;
+    this.ballFallVelocity = 0;
     this.syncBallVisual();
 
     if (this.lives <= 0) {
@@ -910,6 +943,11 @@ class GameScene extends Phaser.Scene {
       if (speed < STOP_SPEED_THRESHOLD) {
         this.resolveShot('stopped');
       }
+    } else if (this.ballHeight > 0) {
+      // Tiro ya resuelto pero la pelota seguia en el aire: la dejamos caer
+      // en vez de quedar flotando congelada hasta el reset.
+      this.ballFallVelocity -= POST_SHOT_GRAVITY * (delta / 1000);
+      this.ballHeight = Math.max(0, this.ballHeight + this.ballFallVelocity * (delta / 1000));
     }
 
     this.syncBallVisual();
