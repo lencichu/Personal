@@ -25,7 +25,7 @@ class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, panelY + 46, 'Desliza hacia arriba para chutar. Inclina para dar efecto.', {
+      .text(width / 2, panelY + 46, 'Desliza hacia arriba para chutar. Inclina para dar efecto. Un toque suave pasa por arriba de la barrera.', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '13px',
         color: '#dfffe0',

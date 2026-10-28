@@ -11,33 +11,69 @@ const GOAL_LOGICAL_Y = 130;
 // que en la realidad: asi la porteria no queda tapada y el tiro tiene
 // recorrido de sobra para curvarse antes de llegar a el.
 const KEEPER_LOGICAL_Y = 175;
-const GOAL_HALF_WIDTH = 130;
-const GOAL_HEIGHT_LOGICAL = 85;
-const SIDE_MARGIN = 30;
+// La referencia real (Flick Kick Football Legends) encuadra la camara mucho
+// mas cerca del arco: la porteria ocupa casi todo el ancho de pantalla, no
+// una franja angosta con mucho pasto alrededor. Por eso el arco es mucho
+// mas ancho que antes y la perspectiva (PERSPECTIVE_FACTOR) es mucho mas
+// plana (se achica poco de cerca a lejos), en vez del "embudo" que teniamos.
+const GOAL_HALF_WIDTH = 200;
+const GOAL_HEIGHT_LOGICAL = 133;
+const SIDE_MARGIN = 15;
 
 // Transformacion en perspectiva para que se vea el balon en primer plano
 // y la porteria/portero al fondo, como en el juego original.
 const FOREGROUND_Y = 560;
 const HORIZON_Y = 280;
-const PERSPECTIVE_FACTOR = 0.5;
+const PERSPECTIVE_FACTOR = 0.85;
 const BALL_SCALE_NEAR = 3.6;
 // El balon casi al fondo tiene que verse chico frente al arco, no como una
 // pelota de playa; el portero igual, bastante mas bajo que el travesano.
-const BALL_SCALE_FAR = 0.22;
-const KEEPER_SCALE_NEAR = 0.65;
-const KEEPER_SCALE_FAR = 0.5;
+const BALL_SCALE_FAR = 0.6;
+const KEEPER_SCALE_NEAR = 1.6;
+const KEEPER_SCALE_FAR = 1.4;
 
 // Barrera de defensores que aparece en dificultad alta (ver difficulty.js).
-const WALL_OFFSET = 90;
+const WALL_OFFSET = 140;
 const WALL_WIDTH = 34;
 const WALL_HEIGHT = 70;
-const WALL_GAP = 6;
+const WALL_GAP = 10;
 const WALL_TINT = 0xe05a5a;
 const KEEPER_HALF_WIDTH = 25;
 
+// ---------- Altura del tiro (globo por encima de la barrera) ----------
+// Un remate suave (poca potencia) levanta la pelota; uno fuerte sale raso,
+// como antes. WALL_REACH_HEIGHT es lo que un defensor/arquero puede tapar
+// parado; GOAL_CROSSBAR_HEIGHT es la altura del travesano (por encima de
+// eso el tiro se va por arriba del arco, no es gol aunque pase el hueco).
+const WALL_REACH_HEIGHT = 55;
+const GOAL_CROSSBAR_HEIGHT = 100;
+const MAX_LOFT_HEIGHT = 75;
+// Por debajo de esta potencia empieza a levantarse el balon; a partir de
+// ahi (remate firme) sale siempre raso.
+const LOFT_POWER_THRESHOLD = 0.6;
+const HEIGHT_VISUAL_SCALE = 1;
+
+// Curva de altura en funcion del avance del tiro (0 = pie, 1 = linea de
+// gol): sube despacio y pega el pico bien cerca del final (donde esta la
+// barrera, que esta pegada a su propia linea), para caer justo a tiempo de
+// entrar por abajo del travesano. HEIGHT_SHAPE_EXP alto = pico mas tardio.
+const HEIGHT_SHAPE_EXP = 8;
+const HEIGHT_SHAPE_PEAK_P = HEIGHT_SHAPE_EXP / (HEIGHT_SHAPE_EXP + 1);
+const HEIGHT_SHAPE_NORM = 1 / (Math.pow(HEIGHT_SHAPE_PEAK_P, HEIGHT_SHAPE_EXP) * (1 - HEIGHT_SHAPE_PEAK_P));
+
+function heightShape(progress) {
+  const p = Phaser.Math.Clamp(progress, 0, 1);
+  return HEIGHT_SHAPE_NORM * Math.pow(p, HEIGHT_SHAPE_EXP) * (1 - p);
+}
+
 const MIN_DRAG = 40;
 const MAX_DRAG = 260;
-const MIN_SPEED = 10;
+// Con frictionAir=0.02, un tiro pierde casi toda su velocidad en unas 580
+// unidades (justo la distancia al arco): por debajo de ~14 de velocidad
+// inicial se quedaba corto antes de llegar, lo que rompia el globo (nunca
+// alcanzaba a pasar la barrera porque ni siquiera llegaba). 14 asegura que
+// hasta el remate mas suave complete el recorrido.
+const MIN_SPEED = 14;
 const MAX_SPEED = 20;
 const MAX_DX = 160;
 const MAX_ANGLE_RAD = Phaser.Math.DegToRad(28);
@@ -108,6 +144,8 @@ class GameScene extends Phaser.Scene {
     this.dragging = false;
     this.dragPoints = [];
     this.curveAccel = 0;
+    this.ballHeight = 0;
+    this.loftPeakHeight = 0;
     this.paused = false;
   }
 
@@ -132,8 +170,10 @@ class GameScene extends Phaser.Scene {
     const leftX = CENTER_X - GOAL_HALF_WIDTH;
     const rightX = CENTER_X + GOAL_HALF_WIDTH;
 
-    this.matter.add.rectangle(leftX, GOAL_LOGICAL_Y + 25, 8, 60, { isStatic: true, label: 'post' });
-    this.matter.add.rectangle(rightX, GOAL_LOGICAL_Y + 25, 8, 60, { isStatic: true, label: 'post' });
+    // Sensores (no cuerpos solidos): asi no rebotan al balon y nuestro propio
+    // codigo decide, segun la altura del tiro, si lo dejan pasar o no.
+    this.matter.add.rectangle(leftX, GOAL_LOGICAL_Y + 25, 8, 60, { isStatic: true, isSensor: true, label: 'post' });
+    this.matter.add.rectangle(rightX, GOAL_LOGICAL_Y + 25, 8, 60, { isStatic: true, isSensor: true, label: 'post' });
 
     this.matter.add.rectangle(CENTER_X, GOAL_LOGICAL_Y - 6, GOAL_HALF_WIDTH * 2 - 10, 14, {
       isStatic: true,
@@ -258,6 +298,7 @@ class GameScene extends Phaser.Scene {
   createKeeper() {
     this.keeperBody = this.matter.add.rectangle(CENTER_X, KEEPER_LOGICAL_Y, 50, 90, {
       isStatic: true,
+      isSensor: true,
       label: 'keeper',
     });
 
@@ -322,6 +363,7 @@ class GameScene extends Phaser.Scene {
       const x = CENTER_X + side * WALL_OFFSET;
       const body = this.matter.add.rectangle(x, KEEPER_LOGICAL_Y, WALL_WIDTH, WALL_HEIGHT, {
         isStatic: true,
+        isSensor: true,
         label: 'wallDefender',
       });
       const sprite = this.add.image(CENTER_X, HORIZON_Y, 'defender_placeholder').setTint(WALL_TINT);
@@ -356,11 +398,17 @@ class GameScene extends Phaser.Scene {
     const pos = this.ballBody.position;
     const screen = toScreen(pos.x, pos.y);
     const scale = Phaser.Math.Linear(BALL_SCALE_NEAR, BALL_SCALE_FAR, screen.t);
+    const heightNorm = Phaser.Math.Clamp(this.ballHeight / MAX_LOFT_HEIGHT, 0, 1);
+    const liftPx = this.ballHeight * HEIGHT_VISUAL_SCALE;
 
-    this.ballSprite.setPosition(screen.x, screen.y).setScale(scale);
+    // La sombra se queda en el piso (posicion normal); la pelota se levanta
+    // por encima de ella segun la altura. Esa separacion es lo que vende la
+    // ilusion de que el balon esta en el aire. De paso, la sombra se achica
+    // y se desvanece un poco mientras mas alto esta, como una sombra real.
+    this.ballSprite.setPosition(screen.x, screen.y - liftPx).setScale(scale);
     this.ballShadow.setPosition(screen.x, screen.y + 6 * scale);
-    this.ballShadow.setScale(scale);
-    this.ballShadow.setAlpha(0.35 * (1 - screen.t * 0.6));
+    this.ballShadow.setScale(scale * (1 - heightNorm * 0.35));
+    this.ballShadow.setAlpha(0.35 * (1 - screen.t * 0.6) * (1 - heightNorm * 0.5));
   }
 
   // ---------- HUD ----------
@@ -623,6 +671,11 @@ class GameScene extends Phaser.Scene {
     MatterBody.setVelocity(this.ballBody, { x: vx, y: vy });
 
     this.curveAccel = curveNorm * CURVE_STRENGTH;
+    // Un remate suave (poca potencia) se levanta en globo; uno firme sale
+    // raso. Por encima de LOFT_POWER_THRESHOLD de potencia no hay globo.
+    const loftNorm = Phaser.Math.Clamp(1 - powerNorm / LOFT_POWER_THRESHOLD, 0, 1);
+    this.loftPeakHeight = loftNorm * MAX_LOFT_HEIGHT;
+    this.ballHeight = 0;
     this.shotInFlight = true;
     this.shotResolved = false;
     this.canShoot = false;
@@ -639,16 +692,24 @@ class GameScene extends Phaser.Scene {
     for (const pair of event.pairs) {
       const labels = [pair.bodyA.label, pair.bodyB.label];
       if (labels.includes('ball') && labels.includes('goalSensor')) {
-        this.resolveShot('goal');
+        // Si el globo todavia va por arriba del travesano al cruzar la
+        // linea, no es gol aunque haya pasado el hueco.
+        this.resolveShot(this.ballHeight > GOAL_CROSSBAR_HEIGHT ? 'crossbar' : 'goal');
         return;
       }
       if (labels.includes('ball') && labels.includes('keeper')) {
-        this.resolveShot('saved');
-        return;
+        // Por encima de la altura de reaccion del arquero, el globo pasa de
+        // largo: no se resuelve aca, el tiro sigue en vuelo.
+        if (this.ballHeight <= WALL_REACH_HEIGHT) {
+          this.resolveShot('saved');
+          return;
+        }
       }
       if (labels.includes('ball') && labels.includes('wallDefender')) {
-        this.resolveShot('blocked');
-        return;
+        if (this.ballHeight <= WALL_REACH_HEIGHT) {
+          this.resolveShot('blocked');
+          return;
+        }
       }
       if (labels.includes('ball') && labels.includes('backWall')) {
         this.resolveShot('wide');
@@ -659,8 +720,12 @@ class GameScene extends Phaser.Scene {
         return;
       }
       if (labels.includes('ball') && labels.includes('post')) {
-        this.resolveShot('wide');
-        return;
+        // El palo tiene la misma altura que el travesano: si el globo ya
+        // esta por encima de eso, tambien pasa de largo el palo.
+        if (this.ballHeight <= GOAL_CROSSBAR_HEIGHT) {
+          this.resolveShot('wide');
+          return;
+        }
       }
     }
   }
@@ -696,7 +761,13 @@ class GameScene extends Phaser.Scene {
     } else {
       this.streak = 0;
       this.lives -= 1;
-      const labels = { saved: '¡PARADA!', wide: 'FUERA', stopped: 'CORTO', blocked: '¡BLOQUEADO!' };
+      const labels = {
+        saved: '¡PARADA!',
+        wide: 'FUERA',
+        stopped: 'CORTO',
+        blocked: '¡BLOQUEADO!',
+        crossbar: '¡POR ARRIBA!',
+      };
       this.showMessage(labels[outcome] || 'FALLO', '#ff6b6b');
       this.sfx.miss();
       vibrate(25);
@@ -778,6 +849,8 @@ class GameScene extends Phaser.Scene {
   afterShot() {
     MatterBody.setPosition(this.ballBody, { x: BALL_LOGICAL_START.x, y: BALL_LOGICAL_START.y });
     MatterBody.setVelocity(this.ballBody, { x: 0, y: 0 });
+    this.ballHeight = 0;
+    this.loftPeakHeight = 0;
     this.syncBallVisual();
 
     if (this.lives <= 0) {
@@ -800,7 +873,6 @@ class GameScene extends Phaser.Scene {
     this.crowd.tilePositionX += 0.03 * delta;
 
     this.updateKeeperPatrol(delta);
-    this.syncBallVisual();
 
     if (this.shotInFlight) {
       const v = this.ballBody.velocity;
@@ -812,10 +884,16 @@ class GameScene extends Phaser.Scene {
         this.curveAccel *= Math.pow(CURVE_DECAY, delta / (1000 / 60));
       }
 
+      const depthProgress =
+        (BALL_LOGICAL_START.y - this.ballBody.position.y) / (BALL_LOGICAL_START.y - GOAL_LOGICAL_Y);
+      this.ballHeight = this.loftPeakHeight * heightShape(depthProgress);
+
       const speed = Math.hypot(v.x, v.y);
       if (speed < STOP_SPEED_THRESHOLD) {
         this.resolveShot('stopped');
       }
     }
+
+    this.syncBallVisual();
   }
 }
