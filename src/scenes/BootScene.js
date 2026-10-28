@@ -9,6 +9,7 @@ class BootScene extends Phaser.Scene {
 
   create() {
     this.generatePlaceholderTextures();
+    this.registry.set('sfx', new SoundManager());
     this.scene.start('MenuScene');
   }
 

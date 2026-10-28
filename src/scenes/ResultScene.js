@@ -62,7 +62,10 @@ class ResultScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
 
-    playButton.on('pointerdown', () => this.scene.start('GameScene'));
+    playButton.on('pointerdown', () => {
+      this.registry.get('sfx').tap();
+      this.scene.start('GameScene');
+    });
 
     const menuButton = this.add
       .text(width / 2, height * 0.75, 'MENU', {
@@ -73,6 +76,9 @@ class ResultScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
 
-    menuButton.on('pointerdown', () => this.scene.start('MenuScene'));
+    menuButton.on('pointerdown', () => {
+      this.registry.get('sfx').tap();
+      this.scene.start('MenuScene');
+    });
   }
 }

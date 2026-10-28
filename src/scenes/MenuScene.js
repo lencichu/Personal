@@ -47,6 +47,7 @@ class MenuScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
 
     playButton.on('pointerdown', () => {
+      this.registry.get('sfx').tap();
       this.scene.start('GameScene');
     });
 

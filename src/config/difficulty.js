@@ -8,7 +8,10 @@ function getDifficulty(score) {
   const tier = Math.floor(score / 3);
   const distance = 11 + tier * 2;
   const keeperMoves = tier >= 1;
-  const keeperPatrolSpeed = keeperMoves ? Math.min(150, 55 + (tier - 1) * 14) : 0;
+  // Sigue acelerando por muchos tiers mas que antes (el techo anterior se
+  // alcanzaba demasiado pronto, tier 8 / 24 goles, y a partir de ahi el
+  // juego dejaba de ponerse mas dificil).
+  const keeperPatrolSpeed = keeperMoves ? Math.min(280, 55 + (tier - 1) * 10) : 0;
   const visualDistanceScale = Math.max(0.72, 1 - tier * 0.03);
   const wallActive = tier >= 2;
   return { tier, distance, keeperMoves, keeperPatrolSpeed, visualDistanceScale, wallActive };

@@ -54,9 +54,24 @@ const STOP_SPEED_THRESHOLD = 0.6;
 // mas marcado para llegar al tope.
 const CURVE_ANGLE_REF = Phaser.Math.DegToRad(40);
 const MIN_POINT_SPACING = 4;
+// Ventana final del gesto (en ms) usada para medir que tan rapido fue el
+// "flickazo" al soltar. FLICK_SPEED_REF esta en px/ms y es el valor que ya
+// da la bonificacion de potencia maxima; probablemente haya que afinarlo
+// con pruebas en un celular real, la velocidad de un dedo real no es la
+// misma que la de un mouse.
+const FLICK_WINDOW_MS = 120;
+const FLICK_SPEED_REF = 1.6;
 
 const START_LIVES = 3;
 const HIGH_SCORE_KEY = 'flickKickFamily_highScore';
+
+// navigator.vibrate no existe en todos los navegadores (iOS Safari, por
+// ejemplo, no lo soporta nunca); el chequeo evita que reviente ahi.
+function vibrate(msOrPattern) {
+  if (navigator.vibrate) {
+    navigator.vibrate(msOrPattern);
+  }
+}
 
 function depthT(logicalY) {
   const t = (BALL_LOGICAL_START.y - logicalY) / (BALL_LOGICAL_START.y - GOAL_LOGICAL_Y);
@@ -97,6 +112,7 @@ class GameScene extends Phaser.Scene {
   }
 
   create() {
+    this.sfx = this.registry.get('sfx');
     this.createBackground();
     this.createPitch();
     this.createGoalPhysics();
@@ -461,6 +477,7 @@ class GameScene extends Phaser.Scene {
   }
 
   togglePause() {
+    this.sfx.tap();
     this.paused = !this.paused;
     this.pauseOverlay.setVisible(this.paused);
     if (this.paused) {
@@ -483,7 +500,7 @@ class GameScene extends Phaser.Scene {
     if (!this.canShoot || this.paused) return;
     this.dragging = true;
     this.dragStart = { x: pointer.x, y: pointer.y };
-    this.dragPoints = [{ x: pointer.x, y: pointer.y }];
+    this.dragPoints = [{ x: pointer.x, y: pointer.y, t: performance.now() }];
   }
 
   onPointerMove(pointer) {
@@ -491,7 +508,7 @@ class GameScene extends Phaser.Scene {
 
     const last = this.dragPoints[this.dragPoints.length - 1];
     if (Phaser.Math.Distance.Between(last.x, last.y, pointer.x, pointer.y) >= MIN_POINT_SPACING) {
-      this.dragPoints.push({ x: pointer.x, y: pointer.y });
+      this.dragPoints.push({ x: pointer.x, y: pointer.y, t: performance.now() });
     }
 
     const dx = pointer.x - this.dragStart.x;
@@ -532,11 +549,32 @@ class GameScene extends Phaser.Scene {
     const dx = pointer.x - this.dragStart.x;
     const dy = this.dragStart.y - pointer.y;
     const curveNorm = this.computeCurveNorm(this.dragPoints);
+    const flickSpeed = this.computeFlickSpeed(this.dragPoints);
     this.dragPoints = [];
 
     if (dy < MIN_DRAG) return;
 
-    this.shoot(dx, dy, curveNorm);
+    this.shoot(dx, dy, curveNorm, flickSpeed);
+  }
+
+  // Velocidad del tramo final del gesto (los ultimos FLICK_WINDOW_MS antes
+  // de soltar), en px/ms. Un "flickazo" corto y rapido debe pesar tanto como
+  // un arrastre largo y lento: la potencia del tiro combina ambas cosas.
+  computeFlickSpeed(points) {
+    if (!points || points.length < 2) return 0;
+
+    const last = points[points.length - 1];
+    let ref = points[0];
+    for (let i = points.length - 1; i >= 0; i--) {
+      ref = points[i];
+      if (last.t - points[i].t >= FLICK_WINDOW_MS) break;
+    }
+
+    const dt = last.t - ref.t;
+    if (dt < 8) return 0;
+
+    const dist = Phaser.Math.Distance.Between(ref.x, ref.y, last.x, last.y);
+    return dist / dt;
   }
 
   // Compara hacia donde apunta la primera mitad del gesto contra la segunda
@@ -569,8 +607,12 @@ class GameScene extends Phaser.Scene {
     return Phaser.Math.Clamp(turnAngle / CURVE_ANGLE_REF, -1, 1);
   }
 
-  shoot(dx, dy, curveNorm = 0) {
-    const powerNorm = Phaser.Math.Clamp((dy - MIN_DRAG) / (MAX_DRAG - MIN_DRAG), 0, 1);
+  shoot(dx, dy, curveNorm = 0, flickSpeed = 0) {
+    const distanceNorm = Phaser.Math.Clamp((dy - MIN_DRAG) / (MAX_DRAG - MIN_DRAG), 0, 1);
+    const flickNorm = Phaser.Math.Clamp(flickSpeed / FLICK_SPEED_REF, 0, 1);
+    // Un flickazo corto y rapido pega tan fuerte como un arrastre largo y
+    // lento: se promedian, no se exige llegar a MAX_DRAG para tener potencia.
+    const powerNorm = Phaser.Math.Clamp(distanceNorm * 0.55 + flickNorm * 0.45, 0, 1);
     const speed = Phaser.Math.Linear(MIN_SPEED, MAX_SPEED, powerNorm);
     const clampedDx = Phaser.Math.Clamp(dx, -MAX_DX, MAX_DX);
     const angle = (clampedDx / MAX_DX) * MAX_ANGLE_RAD;
@@ -584,6 +626,9 @@ class GameScene extends Phaser.Scene {
     this.shotInFlight = true;
     this.shotResolved = false;
     this.canShoot = false;
+
+    this.sfx.kick();
+    vibrate(15);
   }
 
   // ---------- Resolucion de disparo ----------
@@ -641,14 +686,20 @@ class GameScene extends Phaser.Scene {
       if (this.streak > 0 && this.streak % 3 === 0) {
         comboTriggered = true;
         this.showComboCelebration(this.streak);
+        this.sfx.combo();
+        vibrate([40, 30, 60]);
       } else {
         this.showMessage('¡GOL!', '#ffe066');
+        this.sfx.goal();
+        vibrate([30, 40, 30]);
       }
     } else {
       this.streak = 0;
       this.lives -= 1;
       const labels = { saved: '¡PARADA!', wide: 'FUERA', stopped: 'CORTO', blocked: '¡BLOQUEADO!' };
       this.showMessage(labels[outcome] || 'FALLO', '#ff6b6b');
+      this.sfx.miss();
+      vibrate(25);
     }
 
     this.updateHud();
