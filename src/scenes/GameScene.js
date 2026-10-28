@@ -49,9 +49,10 @@ const MAX_ANGLE_RAD = Phaser.Math.DegToRad(28);
 const CURVE_STRENGTH = 12;
 const CURVE_DECAY = 0.996;
 const STOP_SPEED_THRESHOLD = 0.6;
-// Cuanto debe desviarse el trazo del dedo (en px) respecto a la linea recta
-// entre el inicio y el final del gesto para alcanzar el efecto maximo.
-const CURVE_PATH_REF = 50;
+// Angulo de giro (primera mitad del trazo vs. segunda) que ya da el efecto
+// maximo. Mas alla de esto no se gana mas curva, solo hace falta un giro
+// mas marcado para llegar al tope.
+const CURVE_ANGLE_REF = Phaser.Math.DegToRad(40);
 const MIN_POINT_SPACING = 4;
 
 const START_LIVES = 3;
@@ -538,31 +539,34 @@ class GameScene extends Phaser.Scene {
     this.shoot(dx, dy, curveNorm);
   }
 
-  // Mide cuanto se desvia el trazo dibujado respecto a la linea recta entre
-  // el inicio y el final del gesto. Un trazo recto da 0 (tiro sin efecto);
-  // cuanto mas se "curva" el dedo hacia un lado, mayor el efecto hacia ese lado.
+  // Compara hacia donde apunta la primera mitad del gesto contra la segunda
+  // mitad: el angulo firmado entre esas dos direcciones es cuanto "giro" el
+  // dedo. Girar hacia la derecha da curva a la derecha, sin importar de que
+  // lado de la linea recta inicio-fin haya quedado el trazo (una curva
+  // natural, que se va cerrando hacia un lado sin volver al centro, cae del
+  // lado contrario de esa linea recta, por eso comparar contra ella daba el
+  // efecto invertido).
   computeCurveNorm(points) {
     if (!points || points.length < 3) return 0;
 
-    const s = points[0];
-    const e = points[points.length - 1];
-    const lineDx = e.x - s.x;
-    const lineDy = e.y - s.y;
-    const length = Math.hypot(lineDx, lineDy);
-    if (length < 1) return 0;
+    const first = points[0];
+    const mid = points[Math.floor(points.length / 2)];
+    const last = points[points.length - 1];
 
-    let maxAbsDist = 0;
-    let signedAtMax = 0;
-    for (const p of points) {
-      const cross = lineDx * (p.y - s.y) - lineDy * (p.x - s.x);
-      const dist = cross / length;
-      if (Math.abs(dist) > maxAbsDist) {
-        maxAbsDist = Math.abs(dist);
-        signedAtMax = dist;
-      }
-    }
+    const dir1x = mid.x - first.x;
+    const dir1y = mid.y - first.y;
+    const dir2x = last.x - mid.x;
+    const dir2y = last.y - mid.y;
 
-    return Phaser.Math.Clamp(signedAtMax / CURVE_PATH_REF, -1, 1);
+    const len1 = Math.hypot(dir1x, dir1y);
+    const len2 = Math.hypot(dir2x, dir2y);
+    if (len1 < 1 || len2 < 1) return 0;
+
+    const cross = dir1x * dir2y - dir1y * dir2x;
+    const dot = dir1x * dir2x + dir1y * dir2y;
+    const turnAngle = Math.atan2(cross, dot);
+
+    return Phaser.Math.Clamp(turnAngle / CURVE_ANGLE_REF, -1, 1);
   }
 
   shoot(dx, dy, curveNorm = 0) {
