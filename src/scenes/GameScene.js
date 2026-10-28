@@ -9,8 +9,11 @@ const BALL_LOGICAL_START = { x: CENTER_X, y: 710 };
 const GOAL_LOGICAL_Y = 130;
 // El portero se para cerca de su propia linea (no a mitad de cancha), igual
 // que en la realidad: asi la porteria no queda tapada y el tiro tiene
-// recorrido de sobra para curvarse antes de llegar a el.
-const KEEPER_LOGICAL_Y = 175;
+// recorrido de sobra para curvarse antes de llegar a el. Un poco mas atras
+// que el minimo posible (no pegado a GOAL_LOGICAL_Y) para dejar distancia
+// real donde un globo pueda bajar de forma visible antes del arco, en vez
+// de "caer" en de dos cuadros.
+const KEEPER_LOGICAL_Y = 215;
 // La referencia real (Flick Kick Football Legends) encuadra la camara mucho
 // mas cerca del arco: la porteria ocupa casi todo el ancho de pantalla, no
 // una franja angosta con mucho pasto alrededor. Por eso el arco es mucho
@@ -47,23 +50,27 @@ const KEEPER_HALF_WIDTH = 25;
 // eso el tiro se va por arriba del arco, no es gol aunque pase el hueco).
 const WALL_REACH_HEIGHT = 55;
 const GOAL_CROSSBAR_HEIGHT = 100;
-const MAX_LOFT_HEIGHT = 75;
+const MAX_LOFT_HEIGHT = 82;
 // Por debajo de esta potencia empieza a levantarse el balon; a partir de
 // ahi (remate firme) sale siempre raso.
 const LOFT_POWER_THRESHOLD = 0.6;
 const HEIGHT_VISUAL_SCALE = 1;
 
 // Curva de altura en funcion del avance del tiro (0 = pie, 1 = linea de
-// gol): sube despacio y pega el pico bien cerca del final (donde esta la
-// barrera, que esta pegada a su propia linea), para caer justo a tiempo de
-// entrar por abajo del travesano. HEIGHT_SHAPE_EXP alto = pico mas tardio.
-const HEIGHT_SHAPE_EXP = 8;
-const HEIGHT_SHAPE_PEAK_P = HEIGHT_SHAPE_EXP / (HEIGHT_SHAPE_EXP + 1);
-const HEIGHT_SHAPE_NORM = 1 / (Math.pow(HEIGHT_SHAPE_PEAK_P, HEIGHT_SHAPE_EXP) * (1 - HEIGHT_SHAPE_PEAK_P));
+// gol): una parabola "estirada" que arranca en HEIGHT_RISE_START y todavia
+// no volvio del todo a 0 en HEIGHT_FALL_END (ese cero queda fuera del rango
+// util 0-1), asi que lo que se ve en el vuelo real es solo el tramo de
+// subida y bajada bien marcado, sin el "corte" repentino que tenia antes
+// (una curva que pegaba el pico recien al final practicamente no dejaba
+// cuadros para ver caer la pelota).
+const HEIGHT_RISE_START = 0.28;
+const HEIGHT_FALL_END = 1.05;
 
 function heightShape(progress) {
   const p = Phaser.Math.Clamp(progress, 0, 1);
-  return HEIGHT_SHAPE_NORM * Math.pow(p, HEIGHT_SHAPE_EXP) * (1 - p);
+  if (p <= HEIGHT_RISE_START || p >= HEIGHT_FALL_END) return 0;
+  const range = HEIGHT_FALL_END - HEIGHT_RISE_START;
+  return (4 * (p - HEIGHT_RISE_START) * (HEIGHT_FALL_END - p)) / (range * range);
 }
 
 const MIN_DRAG = 40;
@@ -268,6 +275,13 @@ class GameScene extends Phaser.Scene {
     // Misma logica de perspectiva que el ancho (toScreen), para que el arco
     // mantenga una proporcion realista en vez de verse casi cuadrado.
     const postH = GOAL_HEIGHT_LOGICAL * PERSPECTIVE_FACTOR * scale;
+    // El "piso" que usa toScreen() (interpolacion lineal entre FOREGROUND_Y
+    // y HORIZON_Y) no es el mismo piso donde se dibuja la base del arco: el
+    // marco se dibuja desde HORIZON_Y (arriba, el travesano) hacia abajo
+    // postH unidades hasta la base de los palos. El portero/barrera paran
+    // ahi, en esa base, asi que hay que sumarles ese offset o quedan
+    // flotando por encima del pasto.
+    this.groundOffset = postH;
 
     this.goalGraphics.clear();
     this.goalGraphics.lineStyle(2, 0xffffff, 0.5);
@@ -284,6 +298,7 @@ class GameScene extends Phaser.Scene {
 
     if (this.keeperSprite) {
       this.keeperBaseScale = Phaser.Math.Linear(KEEPER_SCALE_NEAR, KEEPER_SCALE_FAR, depthT(KEEPER_LOGICAL_Y)) * scale;
+      this.syncKeeperVisual();
     }
     if (this.wallSprites) {
       this.syncWallVisual();
@@ -303,7 +318,10 @@ class GameScene extends Phaser.Scene {
     });
 
     this.keeperBaseScale = Phaser.Math.Linear(KEEPER_SCALE_NEAR, KEEPER_SCALE_FAR, depthT(KEEPER_LOGICAL_Y));
-    this.keeperSprite = this.add.image(CENTER_X, HORIZON_Y, 'defender_placeholder');
+    // Origen en la base (pies), no en el centro: si no, al agrandar tanto el
+    // sprite para el nuevo encuadre, la mitad de arriba queda flotando por
+    // encima de la linea de pasto/travesano en vez de pisar el suelo.
+    this.keeperSprite = this.add.image(CENTER_X, HORIZON_Y, 'defender_placeholder').setOrigin(0.5, 1);
     this.syncKeeperVisual();
 
     this.keeperDirection = 1;
@@ -313,7 +331,7 @@ class GameScene extends Phaser.Scene {
 
   syncKeeperVisual() {
     const screen = toScreen(this.keeperBody.position.x, KEEPER_LOGICAL_Y);
-    this.keeperSprite.setPosition(screen.x, screen.y).setScale(this.keeperBaseScale);
+    this.keeperSprite.setPosition(screen.x, screen.y + this.groundOffset).setScale(this.keeperBaseScale);
   }
 
   updateKeeperPatrol(delta) {
@@ -366,7 +384,7 @@ class GameScene extends Phaser.Scene {
         isSensor: true,
         label: 'wallDefender',
       });
-      const sprite = this.add.image(CENTER_X, HORIZON_Y, 'defender_placeholder').setTint(WALL_TINT);
+      const sprite = this.add.image(CENTER_X, HORIZON_Y, 'defender_placeholder').setOrigin(0.5, 1).setTint(WALL_TINT);
       this.wallBodies.push(body);
       this.wallSprites.push(sprite);
     }
@@ -376,7 +394,7 @@ class GameScene extends Phaser.Scene {
   syncWallVisual() {
     this.wallBodies.forEach((body, i) => {
       const screen = toScreen(body.position.x, KEEPER_LOGICAL_Y);
-      this.wallSprites[i].setPosition(screen.x, screen.y).setScale(this.keeperBaseScale * 0.92);
+      this.wallSprites[i].setPosition(screen.x, screen.y + this.groundOffset).setScale(this.keeperBaseScale * 0.92);
     });
   }
 
