@@ -48,7 +48,7 @@ class MenuScene extends Phaser.Scene {
 
     playButton.on('pointerdown', () => {
       this.registry.get('sfx').tap();
-      this.scene.start('GameScene');
+      this.scene.start('CharacterSelectScene');
     });
 
     this.add

@@ -12,6 +12,7 @@ class BootScene extends Phaser.Scene {
   create() {
     this.generatePlaceholderTextures();
     this.registry.set('sfx', new SoundManager());
+    this.registry.set('selectedCharacter', CHARACTERS[0]);
     this.scene.start('MenuScene');
   }
 
@@ -40,6 +41,17 @@ class BootScene extends Phaser.Scene {
       g.fillCircle(cx, cy, Phaser.Math.Between(2, 3));
     }
     g.generateTexture('crowd_pattern', 48, 26);
+
+    // Avatar generico para la pantalla de seleccion de jugador: circulo +
+    // silueta de busto en un solo tono, para que el tinte por jugador
+    // (CHARACTERS) coloree todo el avatar de forma pareja.
+    g.clear();
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(32, 32, 32);
+    g.fillStyle(0x0d3d15, 1);
+    g.fillCircle(32, 24, 11);
+    g.fillEllipse(32, 52, 34, 26);
+    g.generateTexture('avatar_placeholder', 64, 64);
 
     g.destroy();
   }

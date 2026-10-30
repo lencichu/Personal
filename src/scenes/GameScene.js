@@ -458,6 +458,23 @@ class GameScene extends Phaser.Scene {
   // ---------- HUD ----------
 
   createHud() {
+    // Retrato + nombre del jugador elegido en CharacterSelectScene. Es solo
+    // cosmetico (no afecta la jugabilidad), va arriba al centro donde hay
+    // espacio libre entre el marcador y las vidas.
+    const character = this.registry.get('selectedCharacter');
+    if (character) {
+      this.add.image(CENTER_X, 30, 'avatar_placeholder').setTint(character.tint).setScale(0.5);
+      this.add.circle(CENTER_X, 30, 17).setStrokeStyle(2, 0xffffff, 0.7);
+      this.add
+        .text(CENTER_X, 56, character.name, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '11px',
+          fontStyle: 'bold',
+          color: '#ffffff',
+        })
+        .setOrigin(0.5);
+    }
+
     this.add.text(16, 16, 'PUNTUACION', {
       fontFamily: 'Arial, sans-serif',
       fontSize: '15px',

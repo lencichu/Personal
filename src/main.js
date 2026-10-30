@@ -18,7 +18,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, MenuScene, GameScene, ResultScene],
+  scene: [BootScene, MenuScene, CharacterSelectScene, GameScene, ResultScene],
 };
 
 window.addEventListener('load', () => {

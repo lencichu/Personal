@@ -13,6 +13,20 @@ class ResultScene extends Phaser.Scene {
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x0d3d15);
 
+    const character = this.registry.get('selectedCharacter');
+    if (character) {
+      this.add.image(width / 2, height * 0.12, 'avatar_placeholder').setTint(character.tint).setScale(0.7);
+      this.add.circle(width / 2, height * 0.12, 24).setStrokeStyle(2, 0xffffff, 0.7);
+      this.add
+        .text(width / 2, height * 0.12 + 32, character.name, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '13px',
+          fontStyle: 'bold',
+          color: '#dfffe0',
+        })
+        .setOrigin(0.5);
+    }
+
     this.add
       .text(width / 2, height * 0.24, 'FIN DE LA PARTIDA', {
         fontFamily: 'Arial, sans-serif',
