@@ -66,8 +66,11 @@ const LOFT_POWER_THRESHOLD = 0.6;
 const HEIGHT_VISUAL_SCALE = 1;
 // Una vez resuelto el tiro, si la pelota todavia estaba en el aire, cae por
 // su cuenta a este ritmo (unidades de altura por segundo al cuadrado) en vez
-// de quedar congelada a mitad de altura.
-const POST_SHOT_GRAVITY = 320;
+// de quedar congelada a mitad de altura. Con el valor viejo (320) la caida
+// era correcta en los numeros pero muy lenta/sutil (hasta ~450ms) y se
+// perdia contra el cartel de "GOL": ahora es bastante mas brusca, se nota
+// como un golpe claro contra el piso en vez de un planeo.
+const POST_SHOT_GRAVITY = 900;
 
 // Curva de altura en funcion del avance del tiro (0 = pie, 1 = linea de
 // gol): una parabola "estirada" que arranca en HEIGHT_RISE_START y todavia
@@ -85,6 +88,12 @@ function heightShape(progress) {
   const range = HEIGHT_FALL_END - HEIGHT_RISE_START;
   return (4 * (p - HEIGHT_RISE_START) * (HEIGHT_FALL_END - p)) / (range * range);
 }
+
+// Que tanto gira el balon por cada unidad de velocidad (en radianes por
+// segundo). La pelota nunca rotaba, se veia "pegada" aunque se estuviera
+// moviendo; ahora gira mas rapido cuanto mas rapido viaja, y se frena junto
+// con ella (no es una animacion de reloj aparte, sale de la velocidad real).
+const BALL_ROTATION_SPEED = 1.7;
 
 const MIN_DRAG = 40;
 const MAX_DRAG = 260;
@@ -167,6 +176,7 @@ class GameScene extends Phaser.Scene {
     this.ballHeight = 0;
     this.loftPeakHeight = 0;
     this.ballFallVelocity = 0;
+    this.ballRotation = 0;
     this.paused = false;
   }
 
@@ -439,7 +449,7 @@ class GameScene extends Phaser.Scene {
     // por encima de ella segun la altura. Esa separacion es lo que vende la
     // ilusion de que el balon esta en el aire. De paso, la sombra se achica
     // y se desvanece un poco mientras mas alto esta, como una sombra real.
-    this.ballSprite.setPosition(screen.x, screen.y - liftPx).setScale(scale);
+    this.ballSprite.setPosition(screen.x, screen.y - liftPx).setScale(scale).setRotation(this.ballRotation);
     this.ballShadow.setPosition(screen.x, screen.y + 6 * scale);
     this.ballShadow.setScale(scale * (1 - heightNorm * 0.35));
     this.ballShadow.setAlpha(0.35 * (1 - screen.t * 0.6) * (1 - heightNorm * 0.5));
@@ -913,6 +923,7 @@ class GameScene extends Phaser.Scene {
     this.ballHeight = 0;
     this.loftPeakHeight = 0;
     this.ballFallVelocity = 0;
+    this.ballRotation = 0;
     this.syncBallVisual();
 
     if (this.lives <= 0) {
@@ -960,6 +971,14 @@ class GameScene extends Phaser.Scene {
       this.ballFallVelocity -= POST_SHOT_GRAVITY * (delta / 1000);
       this.ballHeight = Math.max(0, this.ballHeight + this.ballFallVelocity * (delta / 1000));
     }
+
+    // Gira en base a la velocidad real del momento: rapido mientras vuela,
+    // se frena junto con ella, y gira al reves si rebota hacia atras (una
+    // tapada). Sale de la misma velocidad que ya tiene el motor de fisica,
+    // no es una animacion aparte.
+    const ballV = this.ballBody.velocity;
+    const ballSpeed = Math.hypot(ballV.x, ballV.y);
+    this.ballRotation += Math.sign(-ballV.y) * ballSpeed * BALL_ROTATION_SPEED * (delta / 1000);
 
     this.syncBallVisual();
   }
