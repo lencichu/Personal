@@ -28,12 +28,21 @@ const SIDE_MARGIN = 15;
 const FOREGROUND_Y = 560;
 const HORIZON_Y = 280;
 const PERSPECTIVE_FACTOR = 0.85;
-const BALL_SCALE_NEAR = 3.6;
+// 'ball' ahora es una foto real de 256x256 (antes el placeholder dibujado a
+// mano era de 32x32, 8x mas chico) para que se vea nitida al escalarla de
+// cerca; estos valores ya estan divididos por ese 8x para que el tamaño en
+// pantalla quede igual que antes.
+const BALL_SCALE_NEAR = 0.45;
 // El balon casi al fondo tiene que verse chico frente al arco, no como una
 // pelota de playa; el portero igual, bastante mas bajo que el travesano.
-const BALL_SCALE_FAR = 0.6;
+const BALL_SCALE_FAR = 0.075;
 const KEEPER_SCALE_NEAR = 1.6;
 const KEEPER_SCALE_FAR = 1.4;
+// El arquero usa 'keeper_photo' (400x620), 10x mas grande en pixeles que el
+// placeholder (40x62) del que salen KEEPER_SCALE_NEAR/FAR: se compensa solo
+// en el sprite del arquero. La barrera sigue con el placeholder chico (hasta
+// tener la foto de un familiar), por eso no lleva esta correccion.
+const KEEPER_PHOTO_SCALE_CORRECTION = 0.1;
 
 // Barrera de defensores que aparece en dificultad alta (ver difficulty.js).
 const WALL_OFFSET = 140;
@@ -326,7 +335,7 @@ class GameScene extends Phaser.Scene {
     // Origen en la base (pies), no en el centro: si no, al agrandar tanto el
     // sprite para el nuevo encuadre, la mitad de arriba queda flotando por
     // encima de la linea de pasto/travesano en vez de pisar el suelo.
-    this.keeperSprite = this.add.image(CENTER_X, HORIZON_Y, 'defender_placeholder').setOrigin(0.5, 1);
+    this.keeperSprite = this.add.image(CENTER_X, HORIZON_Y, 'keeper_photo').setOrigin(0.5, 1);
     this.syncKeeperVisual();
 
     this.keeperDirection = 1;
@@ -336,7 +345,9 @@ class GameScene extends Phaser.Scene {
 
   syncKeeperVisual() {
     const screen = toScreen(this.keeperBody.position.x, KEEPER_LOGICAL_Y);
-    this.keeperSprite.setPosition(screen.x, screen.y + this.groundOffset).setScale(this.keeperBaseScale);
+    this.keeperSprite
+      .setPosition(screen.x, screen.y + this.groundOffset)
+      .setScale(this.keeperBaseScale * KEEPER_PHOTO_SCALE_CORRECTION);
   }
 
   updateKeeperPatrol(delta) {
@@ -475,7 +486,7 @@ class GameScene extends Phaser.Scene {
 
     this.lifeIcons = [];
     for (let i = 0; i < START_LIVES; i++) {
-      const icon = this.add.image(FIELD_WIDTH - 24 - i * 30, 44, 'ball').setScale(0.7);
+      const icon = this.add.image(FIELD_WIDTH - 24 - i * 30, 44, 'ball').setScale(0.0875);
       this.lifeIcons.unshift(icon);
     }
 
